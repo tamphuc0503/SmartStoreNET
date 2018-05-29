@@ -1,14 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
 using System.Runtime.Serialization;
 using SmartStore.Core.Domain.Discounts;
-using SmartStore.Core.Domain.Localization;
 using SmartStore.Core.Domain.Media;
-using SmartStore.Core.Domain.Security;
-using SmartStore.Core.Domain.Seo;
-using SmartStore.Core.Domain.Stores;
 
 namespace SmartStore.Core.Domain.Catalog
 {
@@ -17,7 +14,7 @@ namespace SmartStore.Core.Domain.Catalog
     /// </summary>
     [DataContract]
 	[DebuggerDisplay("{Id}: {Name} (Parent: {ParentCategoryId})")]
-	public partial class Category : BaseEntity, ISoftDeletable, ILocalizedEntity, ISlugSupported, IAclSupported, IStoreMappingSupported
+	public partial class Category : BaseEntity, ICategoryNode, IAuditable, ISoftDeletable, IPagingOptions
     {
         private ICollection<Discount> _appliedDiscounts;
 
@@ -110,13 +107,13 @@ namespace SmartStore.Core.Domain.Catalog
         /// Gets or sets the page size
         /// </summary>
 		[DataMember]
-		public int PageSize { get; set; }
+		public int? PageSize { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether customers can select the page size
         /// </summary>
 		[DataMember]
-		public bool AllowCustomersToSelectPageSize { get; set; }
+		public bool? AllowCustomersToSelectPageSize { get; set; }
 
         /// <summary>
         /// Gets or sets the available customer selectable page size options
@@ -124,15 +121,17 @@ namespace SmartStore.Core.Domain.Catalog
 		[DataMember]
 		public string PageSizeOptions { get; set; }
 
-        /// <summary>
-        /// Gets or sets the available price ranges
-        /// </summary>
+		/// <summary>
+		/// Gets or sets the available price ranges
+		/// </summary>
 		[DataMember]
+		[Obsolete("Price ranges are calculated automatically since version 3")]
+		[StringLength(400)]
 		public string PriceRanges { get; set; }
 
-        /// <summary>
-        /// Gets or sets a value indicating whether to show the category on home page
-        /// </summary>
+		/// <summary>
+		/// Gets or sets a value indicating whether to show the category on home page
+		/// </summary>
 		[DataMember]
 		public bool ShowOnHomePage { get; set; }
 

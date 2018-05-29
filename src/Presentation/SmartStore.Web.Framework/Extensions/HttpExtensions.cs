@@ -11,7 +11,6 @@ namespace SmartStore
 {
 	public static class HttpExtensions
 	{
-
 		public static bool IsAdminArea(this HttpRequest request)
 		{
 			if (request != null)
@@ -134,8 +133,7 @@ namespace SmartStore
         {
             Guard.NotNull(httpContext, nameof(httpContext));
 
-            var handler = httpContext.Handler as MvcHandler;
-            if (handler != null && handler.RequestContext != null)
+            if (httpContext.Handler is MvcHandler handler && handler.RequestContext != null)
             {
                 return handler.RequestContext.RouteData;
             }
@@ -194,9 +192,11 @@ namespace SmartStore
 
 			if (value.HasValue() && cookie == null)
 			{
-				cookie = new HttpCookie("sm.UserThemeChoice");
-				cookie.HttpOnly = true;
-				cookie.Expires = DateTime.UtcNow.AddYears(1);					
+				cookie = new HttpCookie("sm.UserThemeChoice")
+				{
+					HttpOnly = true,
+					Expires = DateTime.UtcNow.AddYears(1)
+				};				
 			}
 
 			if (value.HasValue())
@@ -225,8 +225,7 @@ namespace SmartStore
 			
 			if (cookie == null && createIfMissing)
 			{
-				cookie = new HttpCookie("sm.PreviewModeOverrides");
-				cookie.HttpOnly = true;
+				cookie = new HttpCookie("sm.PreviewModeOverrides") { HttpOnly = true };
 				context.Request.Cookies.Set(cookie);
 			}
 

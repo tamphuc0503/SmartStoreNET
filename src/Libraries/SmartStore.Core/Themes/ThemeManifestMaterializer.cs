@@ -7,8 +7,7 @@ using System.Xml;
 using SmartStore.Collections;
 
 namespace SmartStore.Core.Themes
-{
-    
+{   
     internal class ThemeManifestMaterializer
     {
         private readonly ThemeManifest _manifest;
@@ -23,6 +22,7 @@ namespace SmartStore.Core.Themes
 			_manifest.BaseThemeName = folderData.BaseTheme;
             _manifest.Location = folderData.VirtualBasePath;
             _manifest.Path = folderData.FullPath;
+			_manifest.IsSymbolicLink = folderData.IsSymbolicLink;
             _manifest.ConfigurationNode = folderData.Configuration.DocumentElement;
         }
         
@@ -31,8 +31,6 @@ namespace SmartStore.Core.Themes
             var root = _manifest.ConfigurationNode;
 
 			_manifest.ThemeTitle = root.GetAttribute("title").NullEmpty() ?? _manifest.ThemeName;
-            _manifest.SupportRtl = root.GetAttribute("supportRTL").ToBool();
-            _manifest.MobileTheme = root.GetAttribute("mobileTheme").ToBool();
             _manifest.PreviewImageUrl = root.GetAttribute("previewImageUrl").NullEmpty() ?? "~/Themes/{0}/preview.png".FormatCurrent(_manifest.ThemeName);
             _manifest.PreviewText = root.GetAttribute("previewText").ToSafe();
             _manifest.Author = root.GetAttribute("author").ToSafe();
@@ -115,17 +113,17 @@ namespace SmartStore.Core.Themes
                 throw new SmartException("The name attribute is required for the 'Var' element. Affected: '{0}' - element: {1}", _manifest.FullPath, xel.OuterXml);
             }
 
-            if (value.IsEmpty())
-            {
-                throw new SmartException("A value is required for the 'Var' element. Affected: '{0}' - element: {1}", _manifest.FullPath, xel.OuterXml);
-            }
-
             string type = xel.GetAttribute("type").ToSafe("String");
 
             string selectRef = null;
             var varType = ConvertVarType(type, xel, out selectRef);
 
-            var info = new ThemeVariableInfo
+			if (varType != ThemeVariableType.String && value.IsEmpty())
+			{
+				throw new SmartException("A value is required for non-string 'Var' elements. Affected: '{0}' - element: {1}", _manifest.FullPath, xel.OuterXml);
+			}
+
+			var info = new ThemeVariableInfo
             {
                 Name = name,
                 DefaultValue = value,
@@ -172,7 +170,5 @@ namespace SmartStore.Core.Themes
 
             return result;
         }
-
     }
-
 }

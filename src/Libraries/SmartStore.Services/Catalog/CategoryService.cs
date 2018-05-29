@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using SmartStore.Collections;
 using SmartStore.Core;
 using SmartStore.Core.Caching;
@@ -12,21 +13,25 @@ using SmartStore.Core.Events;
 using SmartStore.Data.Caching;
 using SmartStore.Services.Customers;
 using SmartStore.Services.Localization;
+using SmartStore.Services.Search;
 using SmartStore.Services.Security;
 using SmartStore.Services.Stores;
 
 namespace SmartStore.Services.Catalog
 {
-    /// <summary>
-    /// Category service
-    /// </summary>
-    public partial class CategoryService : ICategoryService
+	public partial class CategoryService : ICategoryService
     {
-        private const string CATEGORIES_BY_PARENT_CATEGORY_ID_KEY = "SmartStore.category.byparent-{0}-{1}-{2}-{3}";
-		private const string PRODUCTCATEGORIES_ALLBYCATEGORYID_KEY = "SmartStore.productcategory.allbycategoryid-{0}-{1}-{2}-{3}-{4}-{5}";
-		private const string PRODUCTCATEGORIES_ALLBYPRODUCTID_KEY = "SmartStore.productcategory.allbyproductid-{0}-{1}-{2}-{3}";
-        private const string CATEGORIES_PATTERN_KEY = "SmartStore.category.";
-        private const string PRODUCTCATEGORIES_PATTERN_KEY = "SmartStore.productcategory.";
+		internal static TimeSpan CategoryTreeCacheDuration = TimeSpan.FromHours(6);
+
+		// {0} = IncludeHidden, {1} = CustomerRoleIds, {2} = StoreId
+		internal const string CATEGORY_TREE_KEY = "category:tree-{0}-{1}-{2}";
+		internal const string CATEGORY_TREE_PATTERN_KEY = "category:tree-*";
+
+		private const string CATEGORIES_BY_PARENT_CATEGORY_ID_KEY = "category.byparent-{0}-{1}-{2}-{3}";
+		private const string PRODUCTCATEGORIES_ALLBYCATEGORYID_KEY = "productcategory.allbycategoryid-{0}-{1}-{2}-{3}-{4}-{5}";
+		private const string PRODUCTCATEGORIES_ALLBYPRODUCTID_KEY = "productcategory.allbyproductid-{0}-{1}-{2}-{3}";
+		private const string CATEGORIES_PATTERN_KEY = "category.*";
+		private const string PRODUCTCATEGORIES_PATTERN_KEY = "productcategory.*";
 
         private readonly IRepository<Category> _categoryRepository;
         private readonly IRepository<ProductCategory> _productCategoryRepository;
@@ -37,15 +42,16 @@ namespace SmartStore.Services.Catalog
 		private readonly IStoreContext _storeContext;
         private readonly IEventPublisher _eventPublisher;
         private readonly IRequestCache _requestCache;
+		private readonly ICacheManager _cache;
 		private readonly IStoreMappingService _storeMappingService;
 		private readonly IAclService _aclService;
-        private readonly Lazy<IEnumerable<ICategoryNavigationFilter>> _navigationFilters;
         private readonly ICustomerService _customerService;
-        private readonly IProductService _productService;
         private readonly IStoreService _storeService;
+		private readonly ICatalogSearchService _catalogSearchService;
 
 		public CategoryService(IRequestCache requestCache,
-            IRepository<Category> categoryRepository,
+			ICacheManager cache,
+			IRepository<Category> categoryRepository,
             IRepository<ProductCategory> productCategoryRepository,
             IRepository<Product> productRepository,
             IRepository<AclRecord> aclRepository,
@@ -55,28 +61,27 @@ namespace SmartStore.Services.Catalog
             IEventPublisher eventPublisher,
 			IStoreMappingService storeMappingService,
 			IAclService aclService,
-            Lazy<IEnumerable<ICategoryNavigationFilter>> navigationFilters,
             ICustomerService customerService,
-            IProductService productService,
-            IStoreService storeService)
+            IStoreService storeService,
+			ICatalogSearchService catalogSearchService)
         {
-            this._requestCache = requestCache;
-            this._categoryRepository = categoryRepository;
-            this._productCategoryRepository = productCategoryRepository;
-            this._productRepository = productRepository;
-            this._aclRepository = aclRepository;
-			this._storeMappingRepository = storeMappingRepository;
-            this._workContext = workContext;
-			this._storeContext = storeContext;
-            this._eventPublisher = eventPublisher;
-			this._storeMappingService = storeMappingService;
-			this._aclService = aclService;
-            this._navigationFilters = navigationFilters;
-            this._customerService = customerService;
-            this._productService = productService;
-            this._storeService = storeService;
+            _requestCache = requestCache;
+			_cache = cache;
+            _categoryRepository = categoryRepository;
+            _productCategoryRepository = productCategoryRepository;
+            _productRepository = productRepository;
+            _aclRepository = aclRepository;
+			_storeMappingRepository = storeMappingRepository;
+            _workContext = workContext;
+			_storeContext = storeContext;
+            _eventPublisher = eventPublisher;
+			_storeMappingService = storeMappingService;
+			_aclService = aclService;
+            _customerService = customerService;
+            _storeService = storeService;
+			_catalogSearchService = catalogSearchService;
 
-			this.QuerySettings = DbQuerySettings.Default;
+			QuerySettings = DbQuerySettings.Default;
         }
 
 		public DbQuerySettings QuerySettings { get; set; }
@@ -84,11 +89,15 @@ namespace SmartStore.Services.Catalog
 		private void DeleteAllCategories(IList<Category> categories, bool delete)
 		{
 			foreach (var category in categories)
-			{				
+			{
 				if (delete)
+				{
 					category.Deleted = true;
+				}
 				else
+				{
 					category.ParentCategoryId = 0;
+				}
 
 				UpdateCategory(category);
 
@@ -97,22 +106,27 @@ namespace SmartStore.Services.Catalog
             }
 		}
 
-        public virtual void InheritAclIntoChildren(int categoryId, 
+        public virtual void InheritAclIntoChildren(
+			int categoryId,
             bool touchProductsWithMultipleCategories = false,
             bool touchExistingAcls = false,
             bool categoriesOnly = false)
         {
-
             var category = GetCategoryById(categoryId);
             var subcategories = GetAllCategoriesByParentCategoryId(categoryId, true);
-            var context = new ProductSearchContext { PageSize = int.MaxValue, ShowHidden = true };
-            context.CategoryIds.AddRange(subcategories.Select(x => x.Id));
-            context.CategoryIds.Add(categoryId);
-            var products = _productService.SearchProducts(context);
-            var allCustomerRoles = _customerService.GetAllCustomerRoles(true);
-            var categoryCustomerRoles = _aclService.GetCustomerRoleIdsWithAccess(category);
+			var allCustomerRoles = _customerService.GetAllCustomerRoles(true);
+			var categoryCustomerRoles = _aclService.GetCustomerRoleIdsWithAccess(category);
 
-            using (var scope = new DbContextScope(ctx: _aclRepository.Context, autoDetectChanges: false, proxyCreation: false, validateOnSave: false))
+			var categoryIds = new HashSet<int>(subcategories.Select(x => x.Id));
+			categoryIds.Add(categoryId);
+
+			var searchQuery = new CatalogSearchQuery()
+				.WithCategoryIds(null, categoryIds.ToArray());
+
+			var query = _catalogSearchService.PrepareQuery(searchQuery);
+			var products = query.OrderBy(p => p.Id).ToList();
+
+			using (var scope = new DbContextScope(ctx: _aclRepository.Context, autoDetectChanges: false, proxyCreation: false, validateOnSave: false))
             {
                 _aclRepository.AutoCommitEnabled = false;
 
@@ -145,7 +159,7 @@ namespace SmartStore.Services.Catalog
                         }
                     }
                 }
-                
+
                 _aclRepository.Context.SaveChanges();
 
                 foreach (var product in products)
@@ -182,21 +196,25 @@ namespace SmartStore.Services.Catalog
             }
         }
 
-        public virtual void InheritStoresIntoChildren(int categoryId, 
+        public virtual void InheritStoresIntoChildren(
+			int categoryId,
             bool touchProductsWithMultipleCategories = false,
             bool touchExistingAcls = false,
             bool categoriesOnly = false)
         {
-
             var category = GetCategoryById(categoryId);
             var subcategories = GetAllCategoriesByParentCategoryId(categoryId, true);
-            var context = new ProductSearchContext { PageSize = int.MaxValue , ShowHidden = true };
-            context.CategoryIds.AddRange(subcategories.Select(x => x.Id));
-            context.CategoryIds.Add(categoryId);
-            var products = _productService.SearchProducts(context);
+			var allStores = _storeService.GetAllStores();
+			var categoryStoreMappings = _storeMappingService.GetStoresIdsWithAccess(category);
 
-            var allStores = _storeService.GetAllStores();
-            var categoryStoreMappings = _storeMappingService.GetStoresIdsWithAccess(category);
+			var categoryIds = new HashSet<int>(subcategories.Select(x => x.Id));
+			categoryIds.Add(categoryId);
+
+			var searchQuery = new CatalogSearchQuery()
+				.WithCategoryIds(null, categoryIds.ToArray());
+
+			var query = _catalogSearchService.PrepareQuery(searchQuery);
+			var products = query.OrderBy(p => p.Id).ToList();
 
             using (var scope = new DbContextScope(ctx: _storeMappingRepository.Context, autoDetectChanges: false, proxyCreation: false, validateOnSave: false))
             {
@@ -270,21 +288,19 @@ namespace SmartStore.Services.Catalog
 
 		public virtual void DeleteCategory(Category category, bool deleteChilds = false)
         {
-            if (category == null)
-                throw new ArgumentNullException("category");
+			Guard.NotNull(category, nameof(category));
 
-            category.Deleted = true;
+			category.Deleted = true;
             UpdateCategory(category);
 
 			var childCategories = GetAllCategoriesByParentCategoryId(category.Id, true);
 			DeleteAllCategories(childCategories, deleteChilds);
         }
 
-		public virtual IQueryable<Category> GetCategories(
+		public virtual IQueryable<Category> BuildCategoriesQuery(
 			string categoryName = "",
 			bool showHidden = false,
 			string alias = null,
-			bool applyNavigationFilters = true,
 			int storeId = 0)
 		{
 			var query = _categoryRepository.Table;
@@ -317,18 +333,24 @@ namespace SmartStore.Services.Catalog
 			}
 			else
 			{
-				query = ApplyHiddenCategoriesFilter(query, applyNavigationFilters, _storeContext.CurrentStore.Id);
+				query = ApplyHiddenCategoriesFilter(query, storeId);
 			}
 
 			query = query.Where(c => !c.Deleted);
 
 			return query;
 		}
-        
-        public virtual IPagedList<Category> GetAllCategories(string categoryName = "", int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = false, string alias = null,
-			bool applyNavigationFilters = true, bool ignoreCategoriesWithoutExistingParent = true, int storeId = 0)
+
+        public virtual IPagedList<Category> GetAllCategories(
+			string categoryName = "",
+			int pageIndex = 0,
+			int pageSize = int.MaxValue,
+			bool showHidden = false,
+			string alias = null,
+			bool ignoreCategoriesWithoutExistingParent = true,
+			int storeId = 0)
         {
-			var query = GetCategories(categoryName, showHidden, alias, applyNavigationFilters, storeId);
+			var query = BuildCategoriesQuery(categoryName, showHidden, alias, storeId);
 
 			query = query
 				.OrderBy(x => x.ParentCategoryId)
@@ -337,10 +359,10 @@ namespace SmartStore.Services.Catalog
 
             var unsortedCategories = query.ToList();
 
-            // sort categories
-            var sortedCategories = unsortedCategories.SortCategoriesForTree(ignoreCategoriesWithoutExistingParent: ignoreCategoriesWithoutExistingParent);
+            // Sort categories
+			var sortedCategories = unsortedCategories.SortCategoryNodesForTree(ignoreCategoriesWithoutExistingParent: ignoreCategoriesWithoutExistingParent);
 
-            // paging
+            // Paging
             return new PagedList<Category>(sortedCategories, pageIndex, pageSize);
         }
 
@@ -361,7 +383,7 @@ namespace SmartStore.Services.Catalog
 
                 if (!showHidden)
                 {
-					query = ApplyHiddenCategoriesFilter(query, false, storeId);
+					query = ApplyHiddenCategoriesFilter(query, storeId);
 					query = query.OrderBy(c => c.DisplayOrder);
                 }
 
@@ -370,7 +392,7 @@ namespace SmartStore.Services.Catalog
             });
         }
 
-        protected virtual IQueryable<Category> ApplyHiddenCategoriesFilter(IQueryable<Category> query, bool applyNavigationFilters, int storeId = 0)
+		protected virtual IQueryable<Category> ApplyHiddenCategoriesFilter(IQueryable<Category> query, int storeId = 0)
         {
             // ACL (access control list)
 			if (!QuerySettings.IgnoreAcl)
@@ -396,39 +418,28 @@ namespace SmartStore.Services.Catalog
 						select c;
 			}
 
-            // only distinct categories (group by ID)
+            // Only distinct categories (group by ID)
             query = from c in query
                     group c by c.Id into cGroup
                     orderby cGroup.Key
                     select cGroup.FirstOrDefault();
 
-            if (applyNavigationFilters)
-            {
-                var filters = _navigationFilters.Value;
-                if (filters.Any())
-                {
-                    filters.Each(x => {
-                        query = x.Apply(query);
-                    });
-                }
-            }
-
 			return query;
         }
-        
+
         public virtual IList<Category> GetAllCategoriesDisplayedOnHomePage()
         {
             var query = from c in _categoryRepository.Table
                         orderby c.DisplayOrder
                         where c.Published &&
-                        !c.Deleted && 
+						!c.Deleted &&
                         c.ShowOnHomePage
                         select c;
 
             var categories = query.ToList();
             return categories;
         }
-                
+
         public virtual Category GetCategoryById(int categoryId)
         {
             if (categoryId == 0)
@@ -439,23 +450,17 @@ namespace SmartStore.Services.Catalog
 
         public virtual void InsertCategory(Category category)
         {
-            if (category == null)
-                throw new ArgumentNullException("category");
+			Guard.NotNull(category, nameof(category));
 
-            _categoryRepository.Insert(category);
+			_categoryRepository.Insert(category);
 
-            //cache
             _requestCache.RemoveByPattern(CATEGORIES_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTCATEGORIES_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityInserted(category);
         }
 
         public virtual void UpdateCategory(Category category)
         {
-            if (category == null)
-                throw new ArgumentNullException("category");
+			Guard.NotNull(category, nameof(category));
 
             //validate category hierarchy
             var parentCategory = GetCategoryById(category.ParentCategoryId);
@@ -471,36 +476,27 @@ namespace SmartStore.Services.Catalog
 
             _categoryRepository.Update(category);
 
-            //cache
             _requestCache.RemoveByPattern(CATEGORIES_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTCATEGORIES_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityUpdated(category);
         }
-        
+
         public virtual void UpdateHasDiscountsApplied(Category category)
         {
-            if (category == null)
-                throw new ArgumentNullException("category");
+			Guard.NotNull(category, nameof(category));
 
-            category.HasDiscountsApplied = category.AppliedDiscounts.Count > 0;
+			category.HasDiscountsApplied = category.AppliedDiscounts.Count > 0;
             UpdateCategory(category);
         }
 
         public virtual void DeleteProductCategory(ProductCategory productCategory)
         {
-            if (productCategory == null)
-                throw new ArgumentNullException("productCategory");
+			Guard.NotNull(productCategory, nameof(productCategory));
 
-            _productCategoryRepository.Delete(productCategory);
+			_productCategoryRepository.Delete(productCategory);
 
             //cache
             _requestCache.RemoveByPattern(CATEGORIES_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTCATEGORIES_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityDeleted(productCategory);
         }
 
         public virtual IPagedList<ProductCategory> GetProductCategoriesByCategoryId(int categoryId, int pageIndex, int pageSize, bool showHidden = false)
@@ -515,7 +511,7 @@ namespace SmartStore.Services.Catalog
             {
                 var query = from pc in _productCategoryRepository.Table
                             join p in _productRepository.Table on pc.ProductId equals p.Id
-                            where pc.CategoryId == categoryId && !p.Deleted && (showHidden || p.Published)
+                            where pc.CategoryId == categoryId && !p.Deleted && !p.IsSystemProduct && (showHidden || p.Published)
                             select pc;
 
                 if (!showHidden)
@@ -574,7 +570,7 @@ namespace SmartStore.Services.Catalog
 		{
 			Guard.NotNull(productIds, nameof(productIds));
 
-			var query = 
+			var query =
 				from pc in _productCategoryRepository.TableUntracked.Expand(x => x.Category).Expand(x => x.Category.Picture)
 				join c in _categoryRepository.Table on pc.CategoryId equals c.Id
 				where productIds.Contains(pc.ProductId) && !c.Deleted && (showHidden || c.Published)
@@ -594,7 +590,7 @@ namespace SmartStore.Services.Catalog
 			}
 
 			var map = list.ToMultimap(x => x.ProductId, x => x);
-				
+
 			return map;
 		}
 
@@ -669,15 +665,11 @@ namespace SmartStore.Services.Catalog
         {
             if (productCategory == null)
                 throw new ArgumentNullException("productCategory");
-            
+
             _productCategoryRepository.Insert(productCategory);
 
-            //cache
             _requestCache.RemoveByPattern(CATEGORIES_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTCATEGORIES_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityInserted(productCategory);
         }
 
         public virtual void UpdateProductCategory(ProductCategory productCategory)
@@ -687,57 +679,166 @@ namespace SmartStore.Services.Catalog
 
             _productCategoryRepository.Update(productCategory);
 
-            //cache
             _requestCache.RemoveByPattern(CATEGORIES_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTCATEGORIES_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityUpdated(productCategory);
         }
 
-		public virtual string GetCategoryPath(Product product, int? languageId, Func<int, string> pathLookup, Action<int, string> addPathToCache, Func<int, Category> categoryLookup,
-			ProductCategory prodCategory = null)
+		public virtual IEnumerable<ICategoryNode> GetCategoryTrail(ICategoryNode node)
 		{
-			if (product == null)
-				return string.Empty;
+			Guard.NotNull(node, nameof(node));
 
-			pathLookup = pathLookup ?? ((i) => { return string.Empty; });
-			categoryLookup = categoryLookup ?? ((i) => { return GetCategoryById(i); });
-			addPathToCache = addPathToCache ?? ((i, val) => { });
+			var treeNode = GetCategoryTree(node.Id, true);
 
-			var alreadyProcessedCategoryIds = new List<int>();
-			var path = new List<string>();
-
-			var productCategory = prodCategory ?? GetProductCategoriesByProductId(product.Id).FirstOrDefault();
-
-			if (productCategory != null && productCategory.Category != null)
+			if (treeNode == null)
 			{
-				string cached = pathLookup(productCategory.CategoryId);
-				if (cached.HasValue()) 
-				{
-					return cached;
-				}
-
-				var category = productCategory.Category;
-
-				path.Add(languageId.HasValue ? category.GetLocalized(x => x.Name, languageId.Value) : category.Name);
-				alreadyProcessedCategoryIds.Add(category.Id);
-
-				category = categoryLookup(category.ParentCategoryId);
-				while (category != null && !category.Deleted && category.Published && !alreadyProcessedCategoryIds.Contains(category.Id))
-				{
-					path.Add(languageId.HasValue ? category.GetLocalized(x => x.Name, languageId.Value) : category.Name);
-					alreadyProcessedCategoryIds.Add(category.Id);
-					category = categoryLookup(category.ParentCategoryId);
-				}
-
-				path.Reverse();
-				string result = String.Join(" > ", path);
-				addPathToCache(productCategory.CategoryId, result);
-				return result;
+				return Enumerable.Empty<ICategoryNode>();
 			}
 
-			return string.Empty;
+			return treeNode.Trail
+				.Where(x => !x.IsRoot)
+				//.TakeWhile(x => x.Value.Published) // TBD: (mc) do we need this?
+				.Select(x => x.Value);
 		}
-    }
+
+		public virtual string GetCategoryPath(
+			TreeNode<ICategoryNode> treeNode, 
+			int? languageId = null,
+			string aliasPattern = null, 
+			string separator = " » ")
+		{
+			Guard.NotNull(treeNode, nameof(treeNode));
+
+			var lookupKey = "Path.{0}.{1}.{2}".FormatInvariant(separator, languageId ?? 0, aliasPattern.HasValue());
+			var cachedPath = treeNode.GetMetadata<string>(lookupKey, false);
+
+			if (cachedPath != null)
+			{
+				return cachedPath;
+			}
+
+			var trail = treeNode.Trail;
+			var sb = new StringBuilder(string.Empty, (trail.Count()) * 16);
+
+			foreach (var node in trail)
+			{
+				if (!node.IsRoot)
+				{
+					var cat = node.Value;
+
+					var name = languageId.HasValue
+						? cat.GetLocalized(n => n.Name, languageId.Value)
+						: cat.Name;
+
+					sb.Append(name);
+
+					if (aliasPattern.HasValue() && cat.Alias.HasValue())
+					{
+						sb.Append(" ");
+						sb.Append(string.Format(aliasPattern, cat.Alias));
+				}
+
+					if (node != treeNode)
+					{
+						// Is not self (trail end)
+						sb.Append(separator);
+					}
+				}
+			}
+
+			var path = sb.ToString();
+			treeNode.SetThreadMetadata(lookupKey, path);
+			return path;
+		}
+
+		public TreeNode<ICategoryNode> GetCategoryTree(int rootCategoryId = 0, bool includeHidden = false, int storeId = 0)
+		{
+			var storeToken = QuerySettings.IgnoreMultiStore ? "0" : storeId.ToString();
+			var rolesToken = QuerySettings.IgnoreAcl || includeHidden ? "0" : _workContext.CurrentCustomer.GetRolesIdent();
+			var cacheKey = CATEGORY_TREE_KEY.FormatInvariant(includeHidden.ToString().ToLower(), rolesToken, storeToken);
+
+			var root = _cache.Get(cacheKey, () =>
+			{
+				// (Perf) don't fetch every field from db
+				var query = from x in BuildCategoriesQuery(showHidden: includeHidden, storeId: storeId)
+							orderby x.ParentCategoryId, x.DisplayOrder, x.Name
+							select new
+							{
+								x.Id,
+								x.ParentCategoryId,
+								x.Name,
+								x.Alias,
+								x.PictureId,
+								x.Published,
+								x.DisplayOrder,
+								x.UpdatedOnUtc,
+								x.BadgeText,
+								x.BadgeStyle,
+								x.LimitedToStores,
+								x.SubjectToAcl
+							};
+
+				var unsortedNodes = query.ToList().Select(x => new CategoryNode
+				{
+					Id = x.Id,
+					ParentCategoryId = x.ParentCategoryId,
+					Name = x.Name,
+					Alias = x.Alias,
+					PictureId = x.PictureId,
+					Published = x.Published,
+					DisplayOrder = x.DisplayOrder,
+					UpdatedOnUtc = x.UpdatedOnUtc,
+					BadgeText = x.BadgeText,
+					BadgeStyle = x.BadgeStyle,
+					LimitedToStores = x.LimitedToStores,
+					SubjectToAcl = x.SubjectToAcl
+				});
+
+				var nodes = unsortedNodes.SortCategoryNodesForTree(0, true);
+				var curParent = new TreeNode<ICategoryNode>(new CategoryNode { Name = "Home" });
+				CategoryNode prevNode = null;
+
+				foreach (var node in nodes)
+				{
+					// Determine parent
+					if (prevNode != null)
+					{
+						if (node.ParentCategoryId != curParent.Value.Id)
+						{
+							if (node.ParentCategoryId == prevNode.Id)
+							{
+								// level +1
+								curParent = curParent.LastChild;
+							}
+							else
+							{
+								// level -x
+								while (!curParent.IsRoot)
+								{
+									if (curParent.Value.Id == node.ParentCategoryId)
+									{
+										break;
+									}
+									curParent = curParent.Parent;
+								}
+							}
+						}
+					}
+
+					// add to parent
+					curParent.Append(node, node.Id);
+
+					prevNode = node;
+			}
+
+				return curParent.Root;
+			}, CategoryTreeCacheDuration);
+
+			if (rootCategoryId > 0)
+			{
+				root = root.SelectNodeById(rootCategoryId);
+			}
+
+			return root;
+		}
+	}
 }

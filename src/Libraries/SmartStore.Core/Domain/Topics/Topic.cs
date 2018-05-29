@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using SmartStore.Core.Domain.Localization;
+using SmartStore.Core.Domain.Seo;
 using SmartStore.Core.Domain.Stores;
 
 namespace SmartStore.Core.Domain.Topics
@@ -9,12 +10,17 @@ namespace SmartStore.Core.Domain.Topics
     /// <summary>
     /// Represents a topic
     /// </summary>
-	public partial class Topic : BaseEntity, ILocalizedEntity, IStoreMappingSupported
+	public partial class Topic : BaseEntity, ILocalizedEntity, ISlugSupported, IStoreMappingSupported
     {
         /// <summary>
         /// Gets or sets the name
         /// </summary>
         public string SystemName { get; set; }
+
+        /// <summary>
+        /// Gets or sets the value indicating whether this topic is deleteable by a user
+        /// </summary>
+        public bool IsSystemTopic { get; set; }
 
         /// <summary>
         /// Gets or sets the value indicating whether this topic should be included in sitemap

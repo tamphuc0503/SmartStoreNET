@@ -1,28 +1,25 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Web.Mvc;
-using System.Globalization;
-using System.Text;
-using System.Collections.Generic;
 using System.Xml.Linq;
 using SmartStore.Core;
-using SmartStore.Core.Domain.Catalog;
-using SmartStore.Core.Domain.Common;
-using SmartStore.Core.Logging;
-using SmartStore.Core.Caching;
-using SmartStore.Services.Catalog;
-using SmartStore.Services.Topics;
-using SmartStore.Services.Seo;
-using SmartStore.Core.Domain.Security;
 using SmartStore.Core.Data;
-using SmartStore.Services.Localization;
+using SmartStore.Core.Domain.Catalog;
 using SmartStore.Core.Domain.Customers;
-using SmartStore.Services.Customers;
+using SmartStore.Core.Domain.Security;
 using SmartStore.Core.Domain.Seo;
+using SmartStore.Core.Logging;
+using SmartStore.Services.Catalog;
+using SmartStore.Services.Customers;
+using SmartStore.Services.Localization;
+using SmartStore.Services.Search;
+using SmartStore.Services.Topics;
 
 namespace SmartStore.Services.Seo
 {
-    public partial class XmlSitemapGenerator : IXmlSitemapGenerator
+	public partial class XmlSitemapGenerator : IXmlSitemapGenerator
     {
 		/// <summary>
 		/// Key for seo sitemap
@@ -33,7 +30,7 @@ namespace SmartStore.Services.Seo
 		/// {2} : current language id
 		/// </remarks>
 		public const string XMLSITEMAP_DOCUMENT_KEY = "sitemap:xml-idx{0}-{1}-{2}";
-		public const string XMLSITEMAP_PATTERN_KEY = "sitemap:xml";
+		public const string XMLSITEMAP_PATTERN_KEY = "sitemap:xml*";
 
 		private const string SiteMapsNamespace = "http://www.sitemaps.org/schemas/sitemap/0.9";
 		private const string XhtmlNamespace = "http://www.w3.org/1999/xhtml";
@@ -61,6 +58,7 @@ namespace SmartStore.Services.Seo
         private readonly ITopicService _topicService;
 		private readonly ILanguageService _languageService;
 		private readonly ICustomerService _customerService;
+		private readonly ICatalogSearchService _catalogSearchService;
 		private readonly SeoSettings _seoSettings;
 		private readonly SecuritySettings _securitySettings;
 		private readonly ICommonServices _services;
@@ -73,21 +71,23 @@ namespace SmartStore.Services.Seo
             ITopicService topicService,
 			ILanguageService languageService,
 			ICustomerService customerService,
+			ICatalogSearchService catalogSearchService,
 			SeoSettings commonSettings, 
 			SecuritySettings securitySettings,
 			ICommonServices services,
 			UrlHelper urlHelper)
         {
-            this._categoryService = categoryService;
-            this._productService = productService;
-            this._manufacturerService = manufacturerService;
-            this._topicService = topicService;
-			this._languageService = languageService;
-			this._customerService = customerService;
-            this._seoSettings = commonSettings;
-			this._securitySettings = securitySettings;
-			this._services = services;
-			this._urlHelper = urlHelper;
+            _categoryService = categoryService;
+            _productService = productService;
+            _manufacturerService = manufacturerService;
+            _topicService = topicService;
+			_languageService = languageService;
+			_customerService = customerService;
+			_catalogSearchService = catalogSearchService;
+            _seoSettings = commonSettings;
+			_securitySettings = securitySettings;
+			_services = services;
+			_urlHelper = urlHelper;
 
 			Logger = NullLogger.Instance;
         }
@@ -174,7 +174,7 @@ namespace SmartStore.Services.Seo
 		/// <returns>A collection of XML sitemap documents.</returns>
 		protected IList<string> Generate()
 		{
-			var protocol = _securitySettings.ForceSslForAllPages ? "https" : "http";
+			var protocol = _services.StoreContext.CurrentStore.ForceSslForAllPages ? "https" : "http";
 
 			var nodes = new List<XmlSitemapNode>();
 
@@ -215,7 +215,7 @@ namespace SmartStore.Services.Seo
 
 		protected virtual List<string> GetSiteMapDocuments(IReadOnlyCollection<XmlSitemapNode> nodes)
 		{
-			var protocol = _securitySettings.ForceSslForAllPages ? "https" : "http";
+			var protocol = _services.StoreContext.CurrentStore.ForceSslForAllPages ? "https" : "http";
 
 			int siteMapCount = (int)Math.Ceiling(nodes.Count / (double)MaximumSiteMapNodeCount);
 			CheckSitemapCount(siteMapCount);
@@ -356,7 +356,7 @@ namespace SmartStore.Services.Seo
 
 		protected virtual IEnumerable<XmlSitemapNode> GetCategoryNodes(int parentCategoryId, string protocol)
 		{
-			var categories = _categoryService.GetAllCategories(showHidden: false);
+			var categories = _categoryService.GetAllCategories(showHidden: false, storeId: _services.StoreContext.CurrentStore.Id);
 
 			_services.DbContext.DetachAll();
 
@@ -408,7 +408,7 @@ namespace SmartStore.Services.Seo
 			{
 				var node = new XmlSitemapNode
 				{
-					Loc = _urlHelper.RouteUrl("Topic", new { SystemName = x.SystemName }, protocol),
+					Loc = _urlHelper.RouteUrl("Topic", new { SeName = x.GetSeName() }, protocol),
 					LastMod = DateTime.UtcNow,
 					//ChangeFreq = ChangeFrequency.Weekly,
 					//Priority = 0.8f
@@ -422,19 +422,19 @@ namespace SmartStore.Services.Seo
 
 		protected virtual IEnumerable<XmlSitemapNode> GetProductNodes(string protocol)
 		{
-			var ctx = new ProductSearchContext
-			{
-				OrderBy = ProductSortingEnum.CreatedOn,
-				PageSize = 1000,
-				StoreId = _services.StoreContext.CurrentStoreIdIfMultiStoreMode,
-				VisibleIndividuallyOnly = true
-			};
-
 			var nodes = new List<XmlSitemapNode>();
 
-			for (ctx.PageIndex = 0; ctx.PageIndex < 9999999; ++ctx.PageIndex)
+			var searchQuery = new CatalogSearchQuery()
+				.VisibleOnly()
+				.VisibleIndividuallyOnly(true)
+				.HasStoreId(_services.StoreContext.CurrentStoreIdIfMultiStoreMode);
+
+			var query = _catalogSearchService.PrepareQuery(searchQuery);
+			query = query.OrderByDescending(x => x.CreatedOnUtc);
+
+			for (var pageIndex = 0; pageIndex < 9999999; ++pageIndex)
 			{
-				var products = _productService.SearchProducts(ctx);
+				var products = new PagedList<Product>(query, pageIndex, 1000);
 
 				nodes.AddRange(products.Select(x =>
 				{
@@ -447,7 +447,6 @@ namespace SmartStore.Services.Seo
 					};
 
 					// TODO: add hreflang links if LangCount is > 1 and PrependSeoCode is true
-
 					return node;
 				}));
 

@@ -41,7 +41,7 @@ namespace SmartStore.Web.Framework.Filters
 			// don't provide custom errors if the action has some custom code to handle exceptions
 			if (!filterContext.ActionDescriptor.GetCustomAttributes(typeof(HandleErrorAttribute), false).Any())
 			{
-				if (!filterContext.ExceptionHandled && filterContext.Exception != null && filterContext.HttpContext.IsCustomErrorEnabled)
+				if (!filterContext.ExceptionHandled && filterContext.Exception != null)
 				{
 					if (ShouldHandleException(filterContext.Exception))
 					{
@@ -110,7 +110,7 @@ namespace SmartStore.Web.Framework.Filters
 				// handle not found (404) from within the MVC pipeline (only called when HttpNotFoundResult is returned from actions)
 				var requestContext = filterContext.RequestContext;
 				var url = requestContext.HttpContext.Request.RawUrl;
-				
+
 				filterContext.Result = new ViewResult
 				{
 					ViewName = "NotFound",

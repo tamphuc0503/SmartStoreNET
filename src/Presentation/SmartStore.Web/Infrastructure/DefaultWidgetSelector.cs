@@ -15,6 +15,7 @@ using SmartStore.Services.Topics;
 using SmartStore.Web.Framework.UI;
 using SmartStore.Web.Infrastructure.Cache;
 using SmartStore.Web.Models.Topics;
+using SmartStore.Core.Domain.Topics;
 
 namespace SmartStore.Web.Infrastructure
 {  
@@ -91,18 +92,25 @@ namespace SmartStore.Web.Infrastructure
 				{
 					var allTopicWidgets = _topicService.GetAllTopics(storeId).Where(x => x.RenderAsWidget).ToList();
 					var stubs = allTopicWidgets
-						.Select(t => new TopicWidgetStub
+						.Select(t => 
 						{
-							Id = t.Id,
-							Bordered = t.WidgetBordered,
-							WrapContent = !t.WidgetWrapContent.HasValue || t.WidgetWrapContent.Value,
-							ShowTitle = t.WidgetShowTitle,
-							SystemName = t.SystemName.SanitizeHtmlId(),
-							Title = t.GetLocalized(x => t.Title),
-                            TitleTag = t.TitleTag,
-							Body = t.GetLocalized(x => t.Body),
-							WidgetZones = t.GetWidgetZones().ToArray(),
-							Priority = t.Priority
+							var locTitle = t.GetLocalized(x => t.Title);
+							var locBody = t.GetLocalized(x => t.Body, detectEmptyHtml: true);
+							return new TopicWidgetStub
+							{
+								Id = t.Id,
+								Bordered = t.WidgetBordered,
+								WrapContent = !t.WidgetWrapContent.HasValue || t.WidgetWrapContent.Value,
+								ShowTitle = t.WidgetShowTitle,
+								SystemName = t.SystemName.SanitizeHtmlId(),
+								Title = locTitle,
+								TitleRtl = locTitle.CurrentLanguage.Rtl,
+								Body = locBody,
+								BodyRtl = locBody.CurrentLanguage.Rtl,
+								TitleTag = t.TitleTag,
+								WidgetZones = t.GetWidgetZones().ToArray(),
+								Priority = t.Priority
+							};
 						})
 						.OrderBy(t => t.Priority)
 						.ToList();
@@ -133,52 +141,28 @@ namespace SmartStore.Web.Infrastructure
 									{"area", null},
 									{"widgetZone", zone},
 									{"model", new TopicWidgetModel 
-									{ 
-										Id = widget.Id,
-										SystemName = widget.SystemName,
-										WrapContent = widget.WrapContent,
-										ShowTitle = widget.ShowTitle,
-										IsBordered = widget.Bordered,
-										Title = String.IsNullOrEmpty(widget.Title) ? "div" : widget.Title,
-                                        TitleTag = widget.TitleTag ?? "h3",
-										Html = widget.Body
-									} }
+										{ 
+											Id = widget.Id,
+											SystemName = widget.SystemName,
+											WrapContent = widget.WrapContent,
+											ShowTitle = widget.ShowTitle,
+											IsBordered = widget.Bordered,
+											Title = !widget.Title.HasValue() ? null : widget.Title,
+											TitleTag = widget.TitleTag ?? "h3",
+											Html = widget.Body,
+											HtmlRtl = widget.BodyRtl,
+											TitleRtl = widget.TitleRtl
+										}
+									}
 								}
 							};
+
 							map.Add(zone, routeInfo);
 						}
 					}
 				}
 
 				return map;
-
-				#region Obsolete
-				//var result = from t in topicWidgets 
-				//			 where t.WidgetZones.Contains(widgetZone, StringComparer.InvariantCultureIgnoreCase)
-				//			 orderby t.Priority
-				//			 select new WidgetRouteInfo
-				//			 {
-				//				 ControllerName = "Topic",
-				//				 ActionName = "TopicWidget",
-				//				 RouteValues = new RouteValueDictionary()
-				//				 {
-				//					{"Namespaces", "SmartStore.Web.Controllers"},
-				//					{"area", null},
-				//					{"widgetZone", widgetZone},
-				//					{"model", new TopicWidgetModel 
-				//					{ 
-				//						Id = t.Id,
-				//						SystemName = t.SystemName,
-				//						ShowTitle = t.ShowTitle,
-				//						IsBordered = t.Bordered,
-				//						Title = t.Title,
-				//						Html = t.Body
-				//					} }
-				//				 }
-				//			 };
-
-				//return result.ToList(); 
-				#endregion
 			});
 
 			if (topicsByZone.ContainsKey(widgetZone.ToLower()))
@@ -186,6 +170,13 @@ namespace SmartStore.Web.Infrastructure
 				var zoneWidgets = topicsByZone[widgetZone.ToLower()];
 				foreach (var topicWidget in zoneWidgets)
 				{
+					// Handle OC announcement
+					var topicWidgetModel = topicWidget.RouteValues["model"] as TopicWidgetModel;
+					if (topicWidgetModel != null)
+					{
+						_services.DisplayControl.Announce(new Topic { Id = topicWidgetModel.Id });
+					}
+
 					yield return topicWidget;
 				}
 			}
@@ -206,21 +197,22 @@ namespace SmartStore.Web.Infrastructure
 
 			#endregion
         }
-
-		class TopicWidgetStub
-		{
-			public int Id { get; set; }
-			public string[] WidgetZones { get; set; }
-			public string SystemName { get; set; }
-			public bool WrapContent { get; set; }
-			public bool ShowTitle { get; set; }
-			public bool Bordered { get; set; }
-			public string Title { get; set; }
-            public string TitleTag { get; set; }
-			public string Body { get; set; }
-			public int Priority { get; set; }
-		}
-
     }
 
+	public class TopicWidgetStub
+	{
+		public int Id { get; set; }
+		public string[] WidgetZones { get; set; }
+		public string SystemName { get; set; }
+		public bool WrapContent { get; set; }
+		public bool ShowTitle { get; set; }
+		public bool Bordered { get; set; }
+		public string Title { get; set; }
+		public string Body { get; set; }
+		public bool TitleRtl { get; set; }
+		public bool BodyRtl { get; set; }
+
+		public string TitleTag { get; set; }
+		public int Priority { get; set; }
+	}
 }

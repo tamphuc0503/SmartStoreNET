@@ -4,62 +4,45 @@ using SmartStore.Services;
 using SmartStore.Web.Framework.Controllers;
 using SmartStore.Web.Framework.Security;
 using SmartStore.Web.Framework.Settings;
+using SmartStore.Web.Framework.Theming;
 
 namespace SmartStore.DevTools.Controllers
 {
 
-	public class DevToolsController : SmartController
+    public class DevToolsController : SmartController
     {
-		private readonly ICommonServices _services;
+        private readonly ICommonServices _services;
 
-		public DevToolsController(ICommonServices services)
-		{
-			_services = services;
-		}
+        public DevToolsController(ICommonServices services)
+        {
+            _services = services;
+        }
 
-		[AdminAuthorize, ChildActionOnly]
-		public ActionResult Configure()
-		{
-			// load settings for a chosen store scope
-			var storeScope = this.GetActiveStoreScopeConfiguration(_services.StoreService, _services.WorkContext);
-			var settings = _services.Settings.LoadSetting<ProfilerSettings>(storeScope);
+        [LoadSetting, ChildActionOnly]
+        public ActionResult Configure(ProfilerSettings settings)
+        {
+            return View(settings);
+        }
 
-			var storeDependingSettingHelper = new StoreDependingSettingHelper(ViewData);
-			storeDependingSettingHelper.GetOverrideKeys(settings, settings, storeScope, _services.Settings);
+        [SaveSetting(false), HttpPost, ChildActionOnly, ActionName("Configure")]
+        public ActionResult ConfigurePost(ProfilerSettings settings)
+        {
+			return RedirectToConfiguration("SmartStore.DevTools");
+        }
 
-			return View(settings);
-		}
+        public ActionResult MiniProfiler()
+        {
+            return View();
+        }
 
-		[HttpPost, AdminAuthorize, ChildActionOnly]
-		public ActionResult Configure(ProfilerSettings model, FormCollection form)
-		{
-			if (!ModelState.IsValid)
-				return Configure();
+        public ActionResult MachineName()
+        {
+            ViewBag.EnvironmentIdentifier = _services.ApplicationEnvironment.EnvironmentIdentifier;
 
-			ModelState.Clear();
-
-			// load settings for a chosen store scope
-			var storeDependingSettingHelper = new StoreDependingSettingHelper(ViewData);
-			var storeScope = this.GetActiveStoreScopeConfiguration(_services.StoreService, _services.WorkContext);
-
-			storeDependingSettingHelper.UpdateSettings(model /*settings*/, form, storeScope, _services.Settings);
-
-			return Configure();
-		}
-
-		public ActionResult MiniProfiler()
-		{
-			return View();
-		}
-
-		public ActionResult MachineName()
-		{
-			ViewBag.EnvironmentIdentifier = _services.ApplicationEnvironment.EnvironmentIdentifier;
-
-			return View();
-		}
-
-		public ActionResult WidgetZone(string widgetZone)
+            return View();
+        }
+        
+        public ActionResult WidgetZone(string widgetZone)
         {
 			var storeScope = this.GetActiveStoreScopeConfiguration(_services.StoreService, _services.WorkContext);
 			var settings = _services.Settings.LoadSetting<ProfilerSettings>(storeScope);
@@ -74,7 +57,7 @@ namespace SmartStore.DevTools.Controllers
             return new EmptyResult();
         }
 
-		[AdminAuthorize]
+		[AdminAuthorize, AdminThemed]
 		public ActionResult BackendExtension()
 		{
 			var model = new BackendExtensionModel
@@ -83,6 +66,24 @@ namespace SmartStore.DevTools.Controllers
 			};
 
 			return View(model);
+		}
+
+        [AdminAuthorize]
+        public ActionResult ProductEditTab(int productId, FormCollection form)
+        {
+            var model = new BackendExtensionModel
+            {
+                Welcome = "Hello world!"
+            };
+
+            var result = PartialView(model);
+            result.ViewData.TemplateInfo = new TemplateInfo { HtmlFieldPrefix = "CustomProperties[DevTools]" };
+            return result;
+        }
+
+		public ActionResult MyDemoWidget()
+		{
+			return Content("Hello world! This is a sample widget created for demonstration purposes by Dev-Tools plugin.");
 		}
 	}
 }

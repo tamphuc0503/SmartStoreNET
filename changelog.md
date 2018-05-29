@@ -1,55 +1,424 @@
 ﻿# Release Notes
 
-## SmartStore.NET 3.0
+## SmartStore.NET 3.5
+### Bugfixes
+* **GMC**:
+	* Export the product images if no attribute images are defined
+	* Do not export the first image twice for additional images
+	* Export image URL of full size image (not default size) for additional images
 
-### Breaking change
-* Removed Web API plugin from open source core
+
+## SmartStore.NET 3.1.5
+
+### Highlights
+* Compliance with EU-GDPR requirements
+* Search engine friendly topic URLs
+* "Honeypot" bot detection for registration and contact forms.
 
 ### New Features
-* Output Cache with "donut hole caching" (commercial plugin)
-* REDIS providers for Business Cache, Output Cache and Session State (commercial plugin)
-* Microsoft AZURE provider for media storage (commercial plugin)
+* #1429 Search engine friendly topic URLs
+* Implemented cookie consent according to EU-GDPR
+* Added checkboxes for data processing consent in all relevant forms
+* Implemented "Honeypot" bot detection for registration and contact forms.
+* Trusted Shops: Added consent checkbox to confirm order page for submission of customer email address to Trusted Shops if review widget is active
+* #1226 Shop-Connector: Added exchange of tier prices and delivery times
+* #1439 Debitoor: Option whether to display the payment method and SKU on invoices
+
+### Improvements
+* Added double opt-in feature for newsletter subscriptions during checkout (confirm order)
+* Allow forward slash in product tag URL slug
+* Theming: throttle AJAX cart refresh after spin up/down click
+* Moved StoreLastIpAddress & DisplayPrivacyAgreementOnContactUs from customer settings to privacy settings tab
+* #1450 Show the regular price only if it's higher than the final price
+* #1450 Do not ignore discounts with a negative amount
+* (Soft) deleted customers can be edited now
+* Customer IP addresses will be anonymized on (soft) deletion
+* Set catalogsettings.showsharebutton to false as its not compliant with GDPR
+* Made form fields for first & last name in customer registration optional
+* Implemented settings to make form fields for first & last name required again
+* Made form field for full name in contact us & product request optional
+* Implemented settings to make form field for full name in contact us & product request required again
+* #1453 Import: Use [IGNORE] to ignore a field value on record level
+* #1455 More detail on packing slip when bundled item
+* Display category alias as badge in grids and dropdowns
+
+### Bugfixes
+* Migration: take all same-named message templates into account
+* Messaging: OrderPlaced e-mail templates show main product image even when an attribute combination with a custom image has been selected
+* Theming: fix broken product review voting
+* Theming: added missing bottom space to .html-editor-content
+* Theming: Language switcher is not displayed if no currency options are available
+* No bundle item thumbnail displayed in bundle summary if item is not individually visible
+* Tracking number in shipment details was not saved
+* Assigning or removing product tags did not invalidate model cache
+* Reward points weren't displayed in message templates
+* Dashboard: link for not yet shipped orders loads list with all orders
+* Topic search button had no effect
+* #1442 Message factory should not throw an exception if a template has been deactivated
+* Fixes script error "$(...).tab is not a function" on product detail page
+* Title attribute for the product name in product lists was sometimes truncated
+* Relativizing font sizes should cast to double, not int
+* Fixes category list on product edit page shows empty category name
+* #1438 Debitoor: The country is displayed twice
+* MegaSearch: Fixes indexing ignores DeliveryTimeIdForEmptyStock setting
+* Web API: Fixes "No NavigationLink factory was found for the navigation property 'WalletHistory'"
+* #1449 IgnoreCharges of shipping methods is not working if a localized name is specified
+* Fixes "The object does not support the property or method 'startsWith'" on product edit page.
+* Wallet: Fixes "Child actions are not allowed to perform redirect actions" when there are cart warnings
+* Fixes the delivery time in the order notifications may differ from delivery time on the product detail page
+
+
+## SmartStore.NET 3.1.0
+
+### Highlights
+* **Wallet**: Enables full or partial order payment via credit account. Includes REST-Api. (commercial plugin)
+* **[Liquid](https://github.com/Shopify/liquid/wiki/Liquid-for-Designers) template engine**: very flexible templating for e-mails and campaigns with autocompletion and syntax highlighting.
+* **Cash Rounding**: define money rounding rules on currency and payment method level.
+* **Modern, responsive backend**: migrated backend to Bootstrap 4, overhauled and improved the user interface.
+* **Enhanced MegaMenu**: virtual dropdowns for surplus top-level categories and brands (commercial plugin exclusively bundled with Pro Edition).
+* **RTL**: comprehensive RTL (Right-to-left) and bidi(rectional) support.
+* **Amazon Pay**:
+	* Supports merchants registered in the USA and Japan
+	* External authentication via *Login with Amazon* button in shop frontend
+	* Several improvements through the new *Login and pay with Amazon* services
+* (Perf) **Faster image processing**: new processing and caching strategy! Thumbnails are not created synchronously during the main request anymore, instead a new middleware route defers processing until an image is requested by any client.
+* **TinyImage**: scores ultra-high image compression rates (up to 80 %!) and enables WebP support (commercial plugin exclusively bundled with Premium Edition).
+* **UrlRewriter**: define URL redirection rules in the backend using *mod_rewrite* notation. (commercial plugin)
+* **Address formatting** templates by country
+* **Language packs**: downloader & auto-importer for packages available online.
+
+### Breaking changes
+* Message template customizations are lost due to the new template engine. You have to customize the templates again. No automatic migration, sorry :-(
+* Amazon Pay: The plugin has been changed to new *Login and pay with Amazon* services. The client ID has been added, which has to be created in Amazon Seller Central and saved in the payment method configuration.
+* (Dev) Calls to cache methods `Keys()` and `RemoveByPattern()` require glob chars to be present now (supported glob-styles see [https://redis.io/commands/keys](https://redis.io/commands/keys)). Previously these methods appended `*` to the passed pattern, which made pattern matching rather unflexible.
+* (Dev) Hook framework now passes `IHookedEntity` interface instead of `HookedEntity` class
+* (Dev) Completely removed all `EntityInserted<T>`, `EntityUpdated<T>` and `EntityDeleted<T>` legacy events. We were using DbSaveHooks anyway, which provides a much more powerful and way faster pub-sub mechanism for database operations.
+
+### New Features
+* 1203 MegaMenu shrinker and *Brands* virtual menu item
+* [Summernote](https://summernote.org/) is now the primary HTML editor
+* #431 Added option to randomize the display order for slides on each request
+* #1258 Add option to filter shipping and payment methods by a specific customer role
+* #1247 Allow to import non system customer roles in customer import
+* #1117 Added an option to display a dropdown menu for manufacturers 
+* #1203 Added an option to define a maximum number of elements in the main menu for the first hierarchy of the catalog navigation
+* GMC: column chooser for edit grid
+* #1100 Customer can register in frontend via "Login with Amazon" button
+* **Web API**:
+	* #1292 Added endpoint to get order in PDF format
+	* Added endpoint to complete an order
+	* #1364 Added endpoints for MeasureWeight and MeasureDimension
+* Added options to include option names of specification and product attributes in the search index
+* #441 added option to specify that additional shipping surcharges are considered only once.
+* #1295 Sales tracking (tracking pixel) for Billiger.de
+* XML and CSV export of shopping cart and wishlist items
+* #1363 Make storing of IP addresses optional
+* #729 Option for automatic order amount capturing when the shipping status changed to "shipped"
+* (Dev) ILocalizationFileResolver: responsible for finding localization files for client scripts
+* #998 GMC: Find a way to map attribute combination values to feed export values
+* Added Instagram icon to social media icons in footer
+
+### Improvements
+* Target .NET Framework changed: 4.5.2 > 4.6.1.
+* Lower memory consumption
+* #649 Media FileSystem provider: segmenting files in subfolders to increase IO perf with huge amount of files
+* #1141 Cleaner backend order list. Added more infos like payment method.
+* OuputCache: Simple product changes that affect visibility now correctly invalidate all assigned category and manufacturer pages
+* * OuputCache: When MegaSearch is active, invalidation occurs only during indexing and not ad-hoc anymore. 
+* #1248 New payment integration guidelines for Sofort\Klarna
+* TwitterAuth: better error handling and enhanced admin instruction
+* #1181 Debitoor: Add option to display shipping address on invoices
+* Moved RoundPricesDuringCalculation setting to currency entity
+* #1100 Use new "Login with Amazon" services to initialize an Amazon payment
+* #1285 Copy product: Add option to add more than one copy
+* (Perf) Many improvements in hooking framework
+* #1294 Swiss PostFinance: External payment page too small on mobile devices. Added setting for mobile device template URL, pre-configured with PostFinance template.
+* #1143 Make shipping methods suitable for multi-stores
+* #1320 Image import: Find out the content type of image URLs by response header rather than file extension (which is sometimes missing)
+* #1219 Recently viewed products list should respect setting to hide manufacturer names
+* Import and export product quantity step
+* Add bundle item information to order messages
+* #1031 Enable offline payment methods to have brand icons
+* DevTools Plugin: Added example for cached output invalidation 
+
+### Bugfixes
+* #1268 Data importer always inserts new pictures and does not detect equal pictures while importing
+* OutputCache computes ambiguous cache keys for blog pages
+* #1142 Customer import creates role multiple times
+* #1244 Variant query model binder cannot handle types text and datepicker
+* #1273 Attribute formatter should consider setting CatalogSettings.ShowVariantCombinationPriceAdjustment
+* Product entity picker should use the wildcard search to find products
+* Hook framework should run hooks with `ImportantAttribute` when hooking was disabled per scope
+* #1297 Web API: Parsing the timestamp may fail due to the different accuracy of the milliseconds
+* Debitoor: VAT amount could be transmitted as miscellaneous for deliveries abroad.
+* Prices with discounts limited to categories and customer groups were shown to all users in product lists
+* #1330 MegaSearch: Missing variant facets if the variant value is not unique
+* Back-in-stock subscription form was already submitted when opening the popup dialog
+* Associated products of a grouped product were displayed in the wrong order
+* Payment-Filter: Fixed "The cast to value type 'System.Decimal' failed because the materialized value is null"
+* The tax value per tax rate was not updated when adding\removing a product to\from the order.
+* The option to send manually was ignored when sending e-mails
+* #528 LimitedToStores is required on payment provider rather than plugin level
+* #1318 Disabled preselected attribute combination permanently hides the shopping cart button, even if another combination is selected.
+* Copy product: Fixes "Cannot insert duplicate key row in object dbo.UrlRecord with unique index IX_UrlRecord_Slug"
+* Fixed export publishing via email
+
+## SmartStore.NET 3.0.3
+### Bugfixes
+* #1232 Scheduled tasks are being 'randomly' set inactive
+* #1245 Existing product does not get updated during import under certain circumstances
+* #1207 No low stock activity when bulk editing the product quantity
+* #1208 Missing inventory tab when switching from bundle to simple product
+* #1210 Clear asset cache when a theme setting has changed
+* Fixed name of deleted manufacturers displayed in product lists
+* Fixed non-system category export profile always exports categories of current store
+* Fixed picture assignment for variant attribute combinations of product copies which weren't assigned correctly
+* #1218 CopyProductService does not copy picture of ProductVariantAttributeValue
+* Fixed hidden checkout button when there are two or more shopping cart items and one gets removed from basket during checkout
+* Fixed physical gift cards cannot be moved to cart
+* Fixed tax rate wasn't properly formatted on product detail page
+* #1228 Text entered in frontend for attributes or checkout attributes are truncated by comma
+* Fixed shipping computation method ignoring deactivated PricesIncludeTax setting
+* **Debitoor**: Fixed missing tax rates on Debitoor invoice for net prices
+* #1224 Notifier wasn't working in plugin controllers
+* #1205 Server cannot append header after 
+* 
+*  headers have been sent
+* #1154 Left offcanvas navigation does not open when in checkout progress
+* #1212 Export: FTP publishing should consider directory structure
+* #1253 Product PDF exporter only exports one picture and ignores the picture number profile setting
+* Configuration of some plugins not saved in Firefox browser
+  
+### Improvements
+* Apply img-fluid class to all images within html editor content
+* System name in privacy info topic URL should be lowercase 
+* If no checkout attribute is required checking out will be possible
+* **OpenTrans**: optimizations for Lexware import
+* #496 show bonus points in ordersummary on first checkout page
+* Discounts of plugins weren't displayed in product lists 
+
+### New Features
+* #1076 Add support for percental tier price adjustments
+* **Trusted Shops**: added review import
+* (Dev) SSL redirection on localhost will be bypassed
+* #783 Added option for "Email a friend" which disables the form field "Your email address" so it can't be changed 
+
+## SmartStore.NET 3.0.2
+### Breaking changes
+* MegaSearch: The index must be re-created because of changes to the price filter.
+
+### New Features
+* New setting indicates whether to include or exclude unavailable products in search results by default.
+* (Dev) New Asset Cache 
+
+### Improvements
+* PayPal Standard: New settings "UsePayPalAddress" and "IsShippingAddressRequired" to avoid payment rejection due to address validation.
+* More widget zones for the footer
+* #1177 Implement new setting for product search sorting
+* More fault tolerant task scheduler
+
+### Bugfixes
+* Fixed memory leak in MegaSearch plugin, which caused HTTP 503
+* RSS: Item URLs in feeds have ignored SSL settings
+* Fixed "The view 'ProfileImportResult' or its master was not found"
+* #1187 Search: Do not hide multi-selectable filters of the same group if there are no hits
+* Fixed System.ArgumentNullException in ProductVariantQueryFactory
+* PayPal PLUS: Fixed HTTP 401 "Unauthorized" when calling PatchShipping
+* #1189 MegaSearch: Boosts are ignored in prefix and wildcard queries by default
+* MegaSearch: Localized labels of filters were never displayed
+* #1195 Exporter: don't send an email if no email account has been selected
+* Product lists sometimes show the wrong delivery time
+* #1192 Lucene indexing performance decreases the longer it takes
+* #1198 MegaSearch: never sort numeric range by label, always by value
+* Filter for attributes were always sorted by hit count
+* #1200 PayPal PLUS: Invalid request if the order amount is zero
+* Fixed null reference exception when copying attribute option set with image(s) (file system storage only)
+* Product price sometimes was wrong when entering a numeric value in an attribute text box
+* Added missing code for customer privacy agreement 
+* Clicking the login link wasn't working correctly in offcanvas my-account menu
+* #1158 Currency and language selectors weren't working in OffCanvas menu  
+* Fixed "Server cannot append header after HTTP headers have been sent"
+
+## SmartStore.NET 3.0.1
+### Improvements
+* (Perf) Much faster application startup
+* Microsoft Visual C++ 2015 Redistributable no longer required to be installed
+* **BeezUP**:
+	* Exports up to 9 product images
+	* Export stock quantity when stock is managed by attributes
+	* Export parent child relation data when exporting attribute combinations as products
+	* Flatten and append attribute data when exporting attribute combinations as products
+* Instant search should search manufacturer/brand name
+* HTTP 301 redirects for legacy media URLs
+* (Dev) New 'ApplicationStarted' event
+* (Dev) Enabled C# 6 features in plugin views
+* (GMC) Added missing database indexes.
+* (WebApi) Added endpoints for blog post and blog comment
+* Added more sortable columns to backend product grids
+* #1160 Append suffix 'Picture (1...n)' to thumbnail's alt-attribute on product detail pages
+* (Perf) Faster catalog indexing thanks to new database indexes
+* (Perf) Faster dynamic view compilation thanks to *Roslyn* compiler
+* Added the widget zone 'productdetails_pictures_bottom'
+* Added config setting *sm:PdfEngineBaseUrl*. There are cases where the PDF converter exits with a network error, when it is unable to load automatically resolved URLs.
+* (Dev) Added *Retry* utility class
+* #1176 Admin > Product Search: It ain't possible to search for parts of a product name
+ 
+### Bugfixes
+* #1145: Fixed HTTP 404 after switching language
+* Fixed null reference exception in product lists if sorting is not allowed
+* The file manager did not work correctly under a virtual folder
+* Item row in list style product list should not wrap on small devices
+* Item row in list style product list squashed on Android system browser
+* Linq search: Filter for manufacturers and categories were not limited by store
+* (GMC) Fixes duplicate occurrence of application path in absolute product URL
+* Products with stock managed by attributes sometimes not displayed in category lists
+* Fixed System.MissingMethodException for SmartStore.Core.Search.Facets.FacetGroup
+* Fixed uploaded image paths in HTML fields (Media/Uploaded > Media/<TenantName>/Uploaded)
+* (MegaSearch) Product category order, product manufacturer order and product order were not recognized (sorting)
+* Standard search: Fixed sorting of recently added products
+* Alias for search filters couldn't be set if there's only one language
+* #1168 Cart: MinOrderAmount sometimes ignored
+* Moving products from editable wishlist to cart was out of function
+* Fixed several issues with parallelly executed data export tasks
+* Fixed several issues with *PayPal* payment providers
+* Facebook login out of function due to Facebook API changes (always returns "Unknown error")
+* Fixed 'no picture available' watermark on some product pictures
+* #1153 Removing already applied gift card causes error
+* (Theming) *Drift* zoom uses static zoomFactor. Made it dynamic.
+* (Theming) IE11: simple menu dropdowns weren't positioned correctly
+* Removed "trust" element from web.config (causes problems on some shared hosting spaces)
+* Fixed ThumbZoomer unproportional rescale issue in product grid
+* #1134 JavaScript error (IE 11 in VS debug mode) after removing the last item in shopping cart
+* (Theming) Dozens of layout fs for ixemobile devices (especially iOS and Android native browser)
+* Better error logging for TaskScheduler
+* Fixed several queries which caused problems with SQL CE
+* Fixed missing CurrencyCode exception in product exports
+* #1179 Error while downloading a downloadable product
+* Mega Menu: If a dropdown contains two level hierarchy categories only, they are not wrapped to the next column
+* Hide sort dropdown when option is off
+* HTTP 301 redirects for legacy media URLs
+* Added missing resources of broken migration 'AddressEnhancement' again
+* Checkout: Title and salutation were missing when entering new addresses
+* #1163 ContentSlider: pictures won't be displayed when placed on top or bottom on IOS 
+
+## SmartStore.NET 3.0
+
+### Highlights
+* **Flex**: New mobile-first responsive Theme based on Bootstrap 4
+* **Mega Search**: highly professional search framework based on Lucene.NET (commercial plugin exclusively bundled with Pro Edition)
+	* Ultra fast search results, even with millions of items
+	* Faceted search
+	* Synonyms
+	* Compound word splitting
+* **Mega Menu**: highly customizable catalog menu widgets (commercial plugin exclusively bundled with Pro Edition)
+* **Content Slider**: creates eye-catching content to boost sales (commercial plugin exclusively bundled with Pro Edition)
+* **Output Cache** with "donut hole caching" for maximum speed and scalability (commercial plugin exclusively bundled with Premium Edition)
+* **Microsoft AZURE** provider for media storage (commercial plugin exclusively bundled with Premium Edition)
+* Web Farms: **REDIS** providers for Business Cache, Output Cache and Session State (commercial plugin exclusively bundled with Enterprise Edition)
+* Product variant **option sets**
+* New product specification attribute type: **numeric range**
+* Image support for variant attributes
+
+### Breaking changes
+* Removed old **Content Slider** module from open source core
+* Removed **Web API** plugin from open source core (now exclusively bundled with Premium Edition)
+
+
+### Other New Features
 * Message Bus for inter-process messaging between servers (commercial plugin)
 * Configurable media storage path for web farms
 * (Dev) log4net integration
+* (Dev) proper plugin view debugging
+* (Dev) detect changes to static plugin files (css, js, etc.) and immediately apply them to running project
+* (Dev) Theming: plugins now support implicitly imported SASS files (Content/[public|admin].scss)
 * XML Sitemap optimized for very large catalogs:
 	* Partitions for very large sitemaps (> 50.000 nodes or > 10 MB)
 	* Generated in a background task. No instant invalidation anymore.
-* Added option to skip shipping method selection in checkout process when only one shipping method is active
+* Added option to skip shipping method selection in checkout process if only one shipping method is active
 * Added options to capture salutation and title in addresses and customer info
 * Added projection to control the export of individually visible associated products
-* #1002 Web API: Add support for addresses and customer roles navigation property of customer entity
-* #966 Implement new tax calculation logic for shipping and payment fees (Calculate with rate of highest cart amount)
-* #922 New option whether to include the weight of free shipping products in shipping by weight calculation
+* #966 Implement new tax calculation logic for shipping and payment fees (calculate with rate of highest cart amount)
+* #922 New option to specify whether to include the weight of free shipping products in shipping by weight calculation
 * #724 Allow discounts to be applied to manufacturers
+* Option to display manufacturers sorted in alphabetical order
+* #1093 New product properties required for selling abroad
+* Web API:
+	* #1002 Add support for addresses and customer roles navigation property of customer entity
+	* #1062 Add filter options for user grid on configuration page
+	* #1072 Add support for TaxCategory
+	* #1073 Settings for maximum pagesize ($top) and maximum expansion depth ($expand)
+	* #1074 Extend product image upload to allow updating of images
+	* #1064 Deleting all product categories/manufacturers per product in one go
+	* #1063 Adding product category/manufacturer ignores any other property like DisplayOrder
+	* Added endpoint "Infos" for order and order item entity for additional information like aggregated data.
+	* Swagger integration
+* Added setting to specify whether the product manufacturer should be displayed in product detail
+* #271 Implemented support for attribute images/icons
+* #330 Implement 'attribute option sets'
+* Two themes Flex Black and Flex Blue which are derived from Flex theme    
+
 
 ### Improvements
 * Updated .NET Target Framework from 4.5.1 to 4.5.2
 * Added order message token for accepting third party email handover
 * ECB currency exchange rate provider now cross calculates rates based on euro rates
 * BeezUP: Exports the product weight
-* Payone: Replace client API by Payone iFrame solution. Allows credit card payment compliant with PCI DSS, SAQ A.
 * Updated Elmar shop info XML from version 1.1 to 2.0
 * (Perf) Application start faster by ~20%
 * (Perf) Lower memory consumption
+* (Perf) #1098 Reduce number of created guest accounts (more reliable bot detection)
 * #1008 Export: Add support for description projection to all product exporting providers
 * #1015 Implement Entity Picker in discount requirements
+* Debitoor improvements:
+	* Company name send as customer name if present
+	* Option to append customer email address to invoice address
+	* Additional order notes for tax exemption within and outside EU
+* #1048 Add meta tags to contact us page
+* Order XML export includes more customer data like title and salutation
+* #1080 Do not resolve Order.OrderURLForCustomer token for guest customers
+* #1051 Display EAN in PDF packaging slip
+* #806 User couldn't be created in the admin section without "Manage Customer Roles" permission 
+* #491 Implemented option to determine a default delivery time
+* #1078 Implemented options for "Add to Cart" quantity input field on product level. Quantity control can now be hidden and can be configured to be increased and decreased in steps.
+* #696 Added textual resources for meta title and description for blog per month and by tag pages and enriched them with corresponding month plus year respectivly tag name
+* #1025 Added token for customer number to MessageTokenProvider 
+* #1016 Implemented choosing of MessageTokens for newsletter campaigns with dropdown menu
+* #1107 OpenTrans: Added option to exclude long description of products from export
+* BMEcat: Implemented download of pictures according to MimeRoot-Info
+* Payone:
+	* Replace client API by Payone iFrame solution. Allows credit card payment compliant with PCI DSS, SAQ A.
+	* #1123 Add order note with payment info for prepayment and invoice payment.
+
 
 ### Bugfixes
-* Currency wasn't displayed at shipping estimation
-* SKU, EAN, MPN of last attribute combination was exported for all combinations
-* GMC: Id should be unique when exporting attribute combinations as products
-* GMC: Attribute price adjustments were ignored when exporting attribute combinations as products
-* GMC: Associated products that are not individually visible are not exported anymore. GMC rejects them because the frontend redirects to the grouped product.
-* #999 Export: Projected customer id ignored during price calculation
-* Awarded reward points for a placed order sometimes wrong calculated
-* PayPal PLUS: A changed shipping address/costs was not transmitted to PayPal
+* Currency wasn't displayed for shipping estimation
+* SKU, EAN, MPN of last attribute combination were exported for all combinations
+* GMC:
+	* Id should be unique when exporting attribute combinations as products
+	* Attribute price adjustments were ignored when exporting attribute combinations as products
+	* Associated products that are not individually visible are not exported anymore. GMC rejects them because the frontend redirects to the grouped product.
+* Export:
+	* #999 Projected customer id was ignored during price calculation
+	* #1104 Language projection was ignored when creating product details URL
+	* #1030: Orders didn't include data of attribute combinations
+	* Orders didn't include shipping address
+* Awarded reward points for a placed order were occasionally calculated wrong
+* PayPal PLUS:
+	* Changed shipping address/costs were not transmitted to PayPal
+	* Skip payment if cart total is zero
+	* Do not display payment wall if method is filtered
+* PayPal Express: Fixed net price issue.
 * Bundle item cannot be deleted if it's in a shopping cart
-* #1030: Order export: does not export the data of the attribute combination
-* Order export does not export shipping address
+* Fixed SSL issue for news items in RSS feed
 * Filter shows wrong number of products if "Include products from subcategories" is activated
 * Guest user cannot be deleted if he has a private message
-
+* #1029 Biz-Importer: Imports fixed tax rates as zero percentage
+* #1055 Checkout: Localized shipping method names are not displayed if shipping by total is activated
+* #1071 NewsLetterSubscription.ActivationUrl not working if the store if SSL secured
+* #1086 Gift cards can be earned in one store and applied in another
+* Whishlist: Products with minimum order amount greater then 1 can be added to the whishlist without any warning
+* #1102: Discounts not transmitted when the total amount is zero
+* #1101 Clickatell: Sending SMS not working anymore
 
 ## SmartStore.NET 2.6
 

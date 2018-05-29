@@ -24,7 +24,7 @@ namespace SmartStore.PayPal
 {
 	[SystemName("Payments.PayPalStandard")]
     [FriendlyName("PayPal Standard")]
-    [DisplayOrder(2)]
+    [DisplayOrder(1)]
 	public partial class PayPalStandardProvider : PaymentPluginBase, IConfigurable
 	{
 		private readonly IOrderTotalCalculationService _orderTotalCalculationService;
@@ -226,7 +226,8 @@ namespace SmartStore.PayPal
 			{
 				address = postProcessPaymentRequest.Order.ShippingAddress ?? postProcessPaymentRequest.Order.BillingAddress;
 
-				builder.AppendFormat("&no_shipping=2", new object[0]);
+				// 0 means the buyer is prompted to include a shipping address.
+				builder.AppendFormat("&no_shipping={0}", settings.IsShippingAddressRequired ? "2" : "1");
 			}
 			else
 			{
@@ -250,8 +251,8 @@ namespace SmartStore.PayPal
 				builder.AppendFormat("&notify_url={0}", ipnUrl);
 			}
 
-			//address
-			builder.AppendFormat("&address_override=1");
+			// Address
+			builder.AppendFormat("&address_override={0}", settings.UsePayPalAddress ? "0" : "1");
 			builder.AppendFormat("&first_name={0}", HttpUtility.UrlEncode(address.FirstName));
 			builder.AppendFormat("&last_name={0}", HttpUtility.UrlEncode(address.LastName));
 			builder.AppendFormat("&address1={0}", HttpUtility.UrlEncode(address.Address1));
@@ -410,7 +411,7 @@ namespace SmartStore.PayPal
             var order = postProcessPaymentRequest.Order;
             var lst = new List<PayPalLineItem>();
 
-			// order items... checkout attributes are included in order total
+			// Order items... checkout attributes are included in order total
 			foreach (var orderItem in order.OrderItems)
             {
                 var item = new PayPalLineItem
@@ -425,7 +426,7 @@ namespace SmartStore.PayPal
                 cartTotal += orderItem.PriceExclTax;
             }
 
-            // shipping
+            // Shipping
             if (order.OrderShippingExclTax > decimal.Zero)
             {
                 var item = new PayPalLineItem
@@ -440,7 +441,7 @@ namespace SmartStore.PayPal
                 cartTotal += order.OrderShippingExclTax;
             }
 
-            // payment fee
+            // Payment fee
             if (order.PaymentMethodAdditionalFeeExclTax > decimal.Zero)
             {
                 var item = new PayPalLineItem
@@ -455,7 +456,7 @@ namespace SmartStore.PayPal
                 cartTotal += order.PaymentMethodAdditionalFeeExclTax;
             }
 
-            // tax
+            // Tax
             if (order.OrderTax > decimal.Zero)
             {
                 var item = new PayPalLineItem

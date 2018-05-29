@@ -7,6 +7,7 @@ using SmartStore.Core.Domain.Common;
 using SmartStore.Core.Domain.Customers;
 using SmartStore.Core.Domain.Orders;
 using SmartStore.Core.Domain.Shipping;
+using SmartStore.Core.Domain.Stores;
 using SmartStore.Core.Events;
 using SmartStore.Core.Infrastructure;
 using SmartStore.Core.Localization;
@@ -21,14 +22,12 @@ namespace SmartStore.Services.Shipping
 {
 	public partial class ShippingService : IShippingService
     {
-		#region Fields
-
 		private readonly static object _lock = new object();
 		private static IList<Type> _shippingMethodFilterTypes = null;
 
 		private readonly IRepository<ShippingMethod> _shippingMethodRepository;
-        private readonly ILogger _logger;
-        private readonly IProductAttributeParser _productAttributeParser;
+		private readonly IRepository<StoreMapping> _storeMappingRepository;
+		private readonly IProductAttributeParser _productAttributeParser;
 		private readonly IProductService _productService;
         private readonly ICheckoutAttributeParser _checkoutAttributeParser;
 		private readonly IGenericAttributeService _genericAttributeService;
@@ -38,31 +37,12 @@ namespace SmartStore.Services.Shipping
 		private readonly ISettingService _settingService;
 		private readonly IProviderManager _providerManager;
 		private readonly ITypeFinder _typeFinder;
+		private readonly ICommonServices _services;
 
-        #endregion
-
-        #region Ctor
-
-        /// <summary>
-        /// Ctor
-        /// </summary>
-        /// <param name="cacheManager">Cache manager</param>
-        /// <param name="shippingMethodRepository">Shipping method repository</param>
-        /// <param name="logger">Logger</param>
-        /// <param name="productAttributeParser">Product attribute parser</param>
-		/// <param name="productService">Product service</param>
-        /// <param name="checkoutAttributeParser">Checkout attribute parser</param>
-		/// <param name="genericAttributeService">Generic attribute service</param>
-        /// <param name="localizationService">Localization service</param>
-        /// <param name="shippingSettings">Shipping settings</param>
-        /// <param name="pluginFinder">Plugin finder</param>
-        /// <param name="eventPublisher">Event published</param>
-        /// <param name="shoppingCartSettings">Shopping cart settings</param>
-		/// <param name="settingService">Setting service</param>
         public ShippingService(
             IRepository<ShippingMethod> shippingMethodRepository,
-            ILogger logger,
-            IProductAttributeParser productAttributeParser,
+			IRepository<StoreMapping> storeMappingRepository,
+			IProductAttributeParser productAttributeParser,
 			IProductService productService,
             ICheckoutAttributeParser checkoutAttributeParser,
 			IGenericAttributeService genericAttributeService,
@@ -71,29 +51,31 @@ namespace SmartStore.Services.Shipping
             ShoppingCartSettings shoppingCartSettings,
 			ISettingService settingService,
 			IProviderManager providerManager,
-			ITypeFinder typeFinder)
+			ITypeFinder typeFinder,
+			ICommonServices services)
         {
-            this._shippingMethodRepository = shippingMethodRepository;
-            this._logger = logger;
-            this._productAttributeParser = productAttributeParser;
-			this._productService = productService;
-            this._checkoutAttributeParser = checkoutAttributeParser;
-			this._genericAttributeService = genericAttributeService;
-            this._shippingSettings = shippingSettings;
-            this._eventPublisher = eventPublisher;
-            this._shoppingCartSettings = shoppingCartSettings;
-			this._settingService = settingService;
-			this._providerManager = providerManager;
-			this._typeFinder = typeFinder;
+            _shippingMethodRepository = shippingMethodRepository;
+			_storeMappingRepository = storeMappingRepository;
+            _productAttributeParser = productAttributeParser;
+			_productService = productService;
+            _checkoutAttributeParser = checkoutAttributeParser;
+			_genericAttributeService = genericAttributeService;
+            _shippingSettings = shippingSettings;
+            _eventPublisher = eventPublisher;
+            _shoppingCartSettings = shoppingCartSettings;
+			_settingService = settingService;
+			_providerManager = providerManager;
+			_typeFinder = typeFinder;
+			_services = services;
 
 			T = NullLocalizer.Instance;
+			Logger = NullLogger.Instance;
+			QuerySettings = DbQuerySettings.Default;
 		}
 
 		public Localizer T { get; set; }
-
-		#endregion
-
-		#region Methods
+		public ILogger Logger { get; set; }
+		public DbQuerySettings QuerySettings { get; set; }
 
 		#region Shipping rate computation methods
 
@@ -169,9 +151,6 @@ namespace SmartStore.Services.Shipping
                 throw new ArgumentNullException("shippingMethod");
 
             _shippingMethodRepository.Delete(shippingMethod);
-
-            //event notification
-            _eventPublisher.EntityDeleted(shippingMethod);
         }
 
         /// <summary>
@@ -187,24 +166,42 @@ namespace SmartStore.Services.Shipping
             return _shippingMethodRepository.GetById(shippingMethodId);
         }
 
-		public virtual IList<ShippingMethod> GetAllShippingMethods(GetShippingOptionRequest request = null)
+		public virtual IList<ShippingMethod> GetAllShippingMethods(GetShippingOptionRequest request = null, int storeId = 0)
         {
 			var query =
 				from sm in _shippingMethodRepository.Table
-				orderby sm.DisplayOrder
 				select sm;
 
-			var allMethods = query.ToList();
+			if (!QuerySettings.IgnoreMultiStore && storeId > 0)
+			{
+				query = 
+					from x in query
+					join sm in _storeMappingRepository.TableUntracked
+					on new { c1 = x.Id, c2 = "ShippingMethod" } equals new { c1 = sm.EntityId, c2 = sm.EntityName } into x_sm
+					from sm in x_sm.DefaultIfEmpty()
+					where !x.LimitedToStores || storeId == sm.StoreId
+					select x;
+
+				query = 
+					from x in query
+					group x by x.Id into grp
+					orderby grp.Key
+					select grp.FirstOrDefault();
+			}
+
+			var allMethods = query.OrderBy(x => x.DisplayOrder).ToList();
 
 			if (request == null)
+			{
 				return allMethods;
+			}
 
 			IList<IShippingMethodFilter> allFilters = null;
 			var filterRequest = new ShippingFilterRequest {	Option = request };
 
 			var activeShippingMethods = allMethods.Where(s =>
 			{
-				// shipping method filtering
+				// Shipping method filtering.
 				if (allFilters == null)
 					allFilters = GetAllShippingMethodFilters();
 
@@ -229,9 +226,6 @@ namespace SmartStore.Services.Shipping
                 throw new ArgumentNullException("shippingMethod");
 
             _shippingMethodRepository.Insert(shippingMethod);
-
-            //event notification
-            _eventPublisher.EntityInserted(shippingMethod);
         }
 
         /// <summary>
@@ -244,20 +238,12 @@ namespace SmartStore.Services.Shipping
                 throw new ArgumentNullException("shippingMethod");
 
             _shippingMethodRepository.Update(shippingMethod);
-
-            //event notification
-            _eventPublisher.EntityUpdated(shippingMethod);
         }
 
         #endregion
 
         #region Workflow
 
-        /// <summary>
-        /// Gets shopping cart item weight (of one item)
-        /// </summary>
-        /// <param name="shoppingCartItem">Shopping cart item</param>
-        /// <returns>Shopping cart item weight</returns>
 		public virtual decimal GetShoppingCartItemWeight(OrganizedShoppingCartItem shoppingCartItem)
         {
             if (shoppingCartItem == null)
@@ -293,11 +279,6 @@ namespace SmartStore.Services.Shipping
             return weight;
         }
 
-        /// <summary>
-        /// Gets shopping cart item total weight
-        /// </summary>
-        /// <param name="shoppingCartItem">Shopping cart item</param>
-        /// <returns>Shopping cart item weight</returns>
 		public virtual decimal GetShoppingCartItemTotalWeight(OrganizedShoppingCartItem shoppingCartItem)
         {
             if (shoppingCartItem == null)
@@ -346,13 +327,6 @@ namespace SmartStore.Services.Shipping
             return totalWeight;
         }
 
-        /// <summary>
-        /// Create shipment package from shopping cart
-        /// </summary>
-        /// <param name="cart">Shopping cart</param>
-        /// <param name="shippingAddress">Shipping address</param>
-		/// <param name="storeId">Store identifier</param>
-        /// <returns>Shipment package</returns>
 		public virtual GetShippingOptionRequest CreateShippingOptionRequest(IList<OrganizedShoppingCartItem> cart, Address shippingAddress, int storeId)
         {
             var request = new GetShippingOptionRequest();
@@ -375,16 +349,11 @@ namespace SmartStore.Services.Shipping
 
         }
 
-        /// <summary>
-        ///  Gets available shipping options
-        /// </summary>
-        /// <param name="cart">Shopping cart</param>
-        /// <param name="shippingAddress">Shipping address</param>
-        /// <param name="allowedShippingRateComputationMethodSystemName">Filter by shipping rate computation method identifier; null to load shipping options of all shipping rate computation methods</param>
-		/// <param name="storeId">Load records allows only in specified store; pass 0 to load all records</param>
-        /// <returns>Shipping options</returns>
-		public virtual GetShippingOptionResponse GetShippingOptions(IList<OrganizedShoppingCartItem> cart, Address shippingAddress, 
-			string allowedShippingRateComputationMethodSystemName = "", int storeId = 0)
+		public virtual GetShippingOptionResponse GetShippingOptions(
+			IList<OrganizedShoppingCartItem> cart, 
+			Address shippingAddress, 
+			string allowedShippingRateComputationMethodSystemName = "", 
+			int storeId = 0)
         {
             if (cart == null)
                 throw new ArgumentNullException("cart");
@@ -411,10 +380,7 @@ namespace SmartStore.Services.Shipping
                 {
                     //system name
                     so2.ShippingRateComputationMethodSystemName = srcm.Metadata.SystemName;
-
-                    //round
-                    if (_shoppingCartSettings.RoundPricesDuringCalculation)
-                        so2.Rate = Math.Round(so2.Rate, 2);
+                    so2.Rate = so2.Rate.RoundIfEnabledFor(_services.WorkContext.WorkingCurrency);
 
                     result.ShippingOptions.Add(so2);
                 }
@@ -422,10 +388,15 @@ namespace SmartStore.Services.Shipping
                 //log errors
                 if (!getShippingOptionResponse.Success)
                 {
-                    foreach (string error in getShippingOptionResponse.Errors)
+					var hasItemsToShip = getShippingOptionRequest.Items != null && getShippingOptionRequest.Items.Count > 0;
+
+					foreach (string error in getShippingOptionResponse.Errors)
                     {
                         result.AddError(error);
-						_logger.Warn(string.Concat(srcm.Metadata.FriendlyName, ": ", error));
+						if (hasItemsToShip)
+						{
+							Logger.Warn(error);
+						}
                     }
                 }
             }
@@ -466,8 +437,6 @@ namespace SmartStore.Services.Shipping
 
 			return shippingMethodFilters;
         }
-
-        #endregion
 
         #endregion
     }

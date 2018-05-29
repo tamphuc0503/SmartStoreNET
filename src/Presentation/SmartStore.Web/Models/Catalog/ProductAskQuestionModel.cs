@@ -1,5 +1,6 @@
 ﻿using System.Web.Mvc;
 using FluentValidation.Attributes;
+using SmartStore.Services.Localization;
 using SmartStore.Web.Framework;
 using SmartStore.Web.Framework.Modelling;
 using SmartStore.Web.Validators.Catalog;
@@ -9,7 +10,7 @@ namespace SmartStore.Web.Models.Catalog
     [Validator(typeof(ProductAskQuestionValidator))]
     public partial class ProductAskQuestionModel : EntityModelBase
     {
-        public string ProductName { get; set; }
+        public LocalizedValue<string> ProductName { get; set; }
 
         public string ProductSeName { get; set; }
 
@@ -20,8 +21,9 @@ namespace SmartStore.Web.Models.Catalog
         [AllowHtml]
         [SmartResourceDisplayName("Account.Fields.FullName")]
         public string SenderName { get; set; }
+		public bool SenderNameRequired { get; set; }
 
-        [AllowHtml]
+		[AllowHtml]
         [SmartResourceDisplayName("Account.Fields.Phone")]
         public string SenderPhone { get; set; }
 

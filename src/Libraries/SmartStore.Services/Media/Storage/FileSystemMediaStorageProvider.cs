@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using SmartStore.Core.Domain.Media;
 using SmartStore.Core.IO;
 using SmartStore.Core.Plugins;
 
@@ -24,17 +26,32 @@ namespace SmartStore.Services.Media.Storage
 			get { return "MediaStorage.SmartStoreFileSystem"; }
 		}
 
-		protected string GetPicturePath(MediaItem media)
+		protected string GetPath(MediaItem media)
 		{
-			return _fileSystem.Combine(media.Path, media.GetFileName());
+			var fileName = media.GetFileName();
+
+			var picture = media.Entity as Picture;
+			if (picture != null)
+			{
+				var subfolder = fileName.Substring(0, ImageCache.MaxDirLength);
+				fileName = _fileSystem.Combine(subfolder, fileName);
+			}
+
+			return _fileSystem.Combine(media.Path, fileName);
+		}
+
+		public Stream OpenRead(MediaItem media)
+		{
+			var file = _fileSystem.GetFile(GetPath(media));
+
+			return file.Exists ? file.OpenRead() : null;
 		}
 
 		public byte[] Load(MediaItem media)
 		{
 			Guard.NotNull(media, nameof(media));
 
-			var filePath = GetPicturePath(media);
-
+			var filePath = GetPath(media);
 			return _fileSystem.ReadAllBytes(filePath) ?? new byte[0];
 		}
 
@@ -42,8 +59,7 @@ namespace SmartStore.Services.Media.Storage
 		{
 			Guard.NotNull(media, nameof(media));
 
-			var filePath = GetPicturePath(media);
-
+			var filePath = GetPath(media);
 			return (await _fileSystem.ReadAllBytesAsync(filePath)) ?? new byte[0];
 		}
 
@@ -53,7 +69,7 @@ namespace SmartStore.Services.Media.Storage
 
 			// TODO: (?) if the new file extension differs from the old one then the old file never gets deleted
 
-			var filePath = GetPicturePath(media);
+			var filePath = GetPath(media);
 
 			if (data != null && data.LongLength != 0)
 			{
@@ -71,7 +87,7 @@ namespace SmartStore.Services.Media.Storage
 
 			// TODO: (?) if the new file extension differs from the old one then the old file never gets deleted
 
-			var filePath = GetPicturePath(media);
+			var filePath = GetPath(media);
 
 			if (data != null && data.LongLength != 0)
 			{
@@ -87,8 +103,7 @@ namespace SmartStore.Services.Media.Storage
 		{
 			foreach (var media in medias)
 			{
-				var filePath = GetPicturePath(media);
-
+				var filePath = GetPath(media);
 				_fileSystem.DeleteFile(filePath);
 			}
 		}
@@ -100,7 +115,7 @@ namespace SmartStore.Services.Media.Storage
 			Guard.NotNull(context, nameof(context));
 			Guard.NotNull(media, nameof(media));
 
-			var filePath = GetPicturePath(media);
+			var filePath = GetPath(media);
 
 			try
 			{
@@ -127,7 +142,7 @@ namespace SmartStore.Services.Media.Storage
 			// store data into file
 			if (data != null && data.LongLength != 0)
 			{
-				var filePath = GetPicturePath(media);
+				var filePath = GetPath(media);
 
 				if (!_fileSystem.FileExists(filePath))
 				{
@@ -150,7 +165,7 @@ namespace SmartStore.Services.Media.Storage
 			// store data into file
 			if (data != null && data.LongLength != 0)
 			{
-				var filePath = GetPicturePath(media);
+				var filePath = GetPath(media);
 
 				await _fileSystem.WriteAllBytesAsync(filePath, data);
 

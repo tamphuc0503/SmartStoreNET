@@ -1,18 +1,13 @@
 ﻿using System;
-using System.Linq;
 using System.Collections.Generic;
 using System.Xml;
 using SmartStore.Collections;
 using System.IO;
-using SmartStore.Utilities;
-using System.Web;
 
 namespace SmartStore.Core.Themes
 {
-
 	public class ThemeManifest : ComparableObject<ThemeManifest>
     {
-
         internal ThemeManifest()
         {
         }
@@ -48,7 +43,15 @@ namespace SmartStore.Core.Themes
 				return null;
 
 			virtualBasePath = virtualBasePath.EnsureEndsWith("/");
+
 			var themeDirectory = new DirectoryInfo(themePath);
+
+			var isSymLink = themeDirectory.IsSymbolicLink();
+			if (isSymLink)
+			{
+				themeDirectory = new DirectoryInfo(themeDirectory.GetFinalPathName());
+			}
+
 			var themeConfigFile = new FileInfo(System.IO.Path.Combine(themeDirectory.FullName, "theme.config"));
 
 			if (themeConfigFile.Exists)
@@ -71,6 +74,7 @@ namespace SmartStore.Core.Themes
 				{
 					FolderName = themeDirectory.Name,
 					FullPath = themeDirectory.FullName,
+					IsSymbolicLink = isSymLink,
 					Configuration = doc,
 					VirtualBasePath = virtualBasePath,
 					BaseTheme = baseTheme
@@ -99,34 +103,32 @@ namespace SmartStore.Core.Themes
 			protected internal set; 
 		}
 
-        /// <summary>
-        /// Gets the physical path of the theme
-        /// </summary>
-        public string Path 
-		{ 
-			get; 
-			protected internal set; 
+		/// <summary>
+		/// Determines whether the theme directory is a symbolic link to another target.
+		/// </summary>
+		public bool IsSymbolicLink
+		{
+			get;
+			protected internal set;
 		}
 
-        public string PreviewImageUrl 
+		/// <summary>
+		/// Gets the physical path of the theme. In case of a symbolic link,
+		/// returns the link's target path.
+		/// </summary>
+		public string Path
+		{
+			get;
+			protected internal set;
+		}
+
+		public string PreviewImageUrl 
 		{ 
 			get; 
 			protected internal set; 
 		}
 
         public string PreviewText 
-		{ 
-			get; 
-			protected internal set; 
-		}
-
-        public bool SupportRtl 
-		{ 
-			get; 
-			protected internal set; 
-		}
-
-        public bool MobileTheme 
 		{ 
 			get; 
 			protected internal set; 
@@ -327,5 +329,4 @@ namespace SmartStore.Core.Themes
 		MissingBaseTheme = -1,
 		Active = 0,
 	}
-
 }

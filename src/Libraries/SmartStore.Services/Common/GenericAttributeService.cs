@@ -7,7 +7,6 @@ using SmartStore.Core.Data;
 using SmartStore.Core.Domain.Common;
 using SmartStore.Core.Domain.Orders;
 using SmartStore.Core.Events;
-using SmartStore.Data;
 using SmartStore.Services.Orders;
 using SmartStore.Data.Caching;
 
@@ -24,23 +23,19 @@ namespace SmartStore.Services.Common
             IEventPublisher eventPublisher,
 			IRepository<Order> orderRepository)
         {
-            this._genericAttributeRepository = genericAttributeRepository;
-            this._eventPublisher = eventPublisher;
-			this._orderRepository = orderRepository;
+            _genericAttributeRepository = genericAttributeRepository;
+            _eventPublisher = eventPublisher;
+			_orderRepository = orderRepository;
         }
 
         public virtual void DeleteAttribute(GenericAttribute attribute)
         {
-            if (attribute == null)
-                throw new ArgumentNullException("attribute");
+			Guard.NotNull(attribute, nameof(attribute));
 
 			int entityId = attribute.EntityId;
 			string keyGroup = attribute.KeyGroup;
 
             _genericAttributeRepository.Delete(attribute);
-
-            //event notifications
-            _eventPublisher.EntityDeleted(attribute);
 
 			if (keyGroup.IsCaseInsensitiveEqual("Order") && entityId != 0)
 			{
@@ -60,13 +55,9 @@ namespace SmartStore.Services.Common
 
         public virtual void InsertAttribute(GenericAttribute attribute)
         {
-            if (attribute == null)
-                throw new ArgumentNullException("attribute");
+			Guard.NotNull(attribute, nameof(attribute));
 
-            _genericAttributeRepository.Insert(attribute);
-
-            //event notifications
-            _eventPublisher.EntityInserted(attribute);
+			_genericAttributeRepository.Insert(attribute);
 
 			if (attribute.KeyGroup.IsCaseInsensitiveEqual("Order") && attribute.EntityId != 0)
 			{
@@ -77,13 +68,9 @@ namespace SmartStore.Services.Common
 
         public virtual void UpdateAttribute(GenericAttribute attribute)
         {
-            if (attribute == null)
-                throw new ArgumentNullException("attribute");
+			Guard.NotNull(attribute, nameof(attribute));
 
-            _genericAttributeRepository.Update(attribute);
-
-            //event notifications
-            _eventPublisher.EntityUpdated(attribute);
+			_genericAttributeRepository.Update(attribute);
 
 			if (attribute.KeyGroup.IsCaseInsensitiveEqual("Order") && attribute.EntityId != 0)
 			{
@@ -131,7 +118,7 @@ namespace SmartStore.Services.Common
         {
 			Guard.NotNull(entity, nameof(entity));
 
-			SaveAttribute(entity.Id, key, entity.GetUnproxiedEntityType().Name, value, storeId);
+			SaveAttribute(entity.Id, key, entity.GetUnproxiedType().Name, value, storeId);
         }
 
 		public virtual void SaveAttribute<TPropType>(int entityId, string key, string keyGroup, TPropType value, int storeId = 0)

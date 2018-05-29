@@ -9,11 +9,13 @@ using SmartStore.Core.Domain.Common;
 using SmartStore.Core.Domain.Customers;
 using SmartStore.Core.Domain.Security;
 using SmartStore.Core.Events;
+using SmartStore.Core.Fakes;
 using SmartStore.Services.Common;
 using SmartStore.Services.Customers;
 using SmartStore.Services.Messages;
 using SmartStore.Services.Security;
 using SmartStore.Tests;
+using System;
 
 namespace SmartStore.Services.Tests.Customers
 {
@@ -34,8 +36,12 @@ namespace SmartStore.Services.Tests.Customers
         RewardPointsSettings _rewardPointsSettings;
         SecuritySettings _securitySettings;
 		IStoreContext _storeContext;
+		ICommonServices _services;
+		IUserAgent _userAgent;
+		Lazy<IMessageModelProvider> _messageModelProvider;
+		Lazy<IGdprTool> _gdprTool;
 
-        [SetUp]
+		[SetUp]
         public new void SetUp()
         {
             _customerSettings = new CustomerSettings();
@@ -111,14 +117,34 @@ namespace SmartStore.Services.Tests.Customers
             _customerRoleRepo = MockRepository.GenerateMock<IRepository<CustomerRole>>();
             _genericAttributeRepo = MockRepository.GenerateMock<IRepository<GenericAttribute>>();
 			_rewardPointsHistoryRepo = MockRepository.GenerateMock<IRepository<RewardPointsHistory>>();
+			_userAgent = MockRepository.GenerateMock<IUserAgent>();
 
-            _genericAttributeService = MockRepository.GenerateMock<IGenericAttributeService>();
+			_genericAttributeService = MockRepository.GenerateMock<IGenericAttributeService>();
             _newsLetterSubscriptionService = MockRepository.GenerateMock<INewsLetterSubscriptionService>();
             
 			_storeContext = MockRepository.GenerateMock<IStoreContext>();
 
-            _customerService = new CustomerService(NullRequestCache.Instance, _customerRepo, _customerRoleRepo,
-                _genericAttributeRepo, _rewardPointsHistoryRepo, _genericAttributeService, _eventPublisher, _rewardPointsSettings);
+			_services = MockRepository.GenerateMock<ICommonServices>();
+			_services.Expect(x => x.StoreContext).Return(_storeContext);
+			_services.Expect(x => x.RequestCache).Return(NullRequestCache.Instance);
+			_services.Expect(x => x.Cache).Return(NullCache.Instance);
+			_services.Expect(x => x.EventPublisher).Return(_eventPublisher);
+
+			_messageModelProvider = MockRepository.GenerateMock<Lazy<IMessageModelProvider>>();
+			_gdprTool = MockRepository.GenerateMock<Lazy<IGdprTool>>();
+
+			_customerService = new CustomerService(
+				_customerRepo, 
+				_customerRoleRepo,
+                _genericAttributeRepo, 
+				_rewardPointsHistoryRepo, 
+				_genericAttributeService,
+				_rewardPointsSettings, 
+				_services, 
+				new FakeHttpContext("~/"), 
+				_userAgent, 
+				_messageModelProvider, 
+				_gdprTool);
 
             _customerRegistrationService = new CustomerRegistrationService(_customerService,
                 _encryptionService, _newsLetterSubscriptionService, _rewardPointsSettings, _customerSettings, _storeContext, _eventPublisher);

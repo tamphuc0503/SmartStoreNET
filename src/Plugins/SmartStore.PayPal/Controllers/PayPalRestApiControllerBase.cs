@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Web.Mvc;
 using SmartStore.Core.Configuration;
+using SmartStore.Core.Logging;
 using SmartStore.PayPal.Services;
 using SmartStore.PayPal.Settings;
 using SmartStore.Web.Framework.Controllers;
@@ -10,7 +11,7 @@ using SmartStore.Web.Framework.Security;
 
 namespace SmartStore.PayPal.Controllers
 {
-	public abstract class PayPalRestApiControllerBase<TSetting> : PaymentControllerBase where TSetting : PayPalApiSettingsBase, ISettings, new()
+	public abstract class PayPalRestApiControllerBase<TSetting> : PayPalPaymentControllerBase where TSetting : PayPalApiSettingsBase, ISettings, new()
 	{
 		public PayPalRestApiControllerBase(
 			string systemName,
@@ -165,7 +166,7 @@ namespace SmartStore.PayPal.Controllers
 			}
 			catch (Exception exception)
 			{
-				PayPalService.LogError(exception, isWarning: true);
+				Logger.Log(LogLevel.Warning, exception, null, null);
 			}
 
 			return new HttpStatusCodeResult(result);

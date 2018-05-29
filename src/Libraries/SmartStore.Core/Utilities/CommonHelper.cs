@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Dynamic;
+using System.Linq;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
@@ -12,7 +14,9 @@ using SmartStore.ComponentModel;
 namespace SmartStore.Utilities
 {
     public static partial class CommonHelper
-    {	
+    {
+		private static bool? _isDevEnvironment;
+		
 		/// <summary>
         /// Generate random digit code
         /// </summary>
@@ -89,22 +93,32 @@ namespace SmartStore.Utilities
 		{
 			get 
 			{
-				if (!HostingEnvironment.IsHosted)
-					return true;
+				if (!_isDevEnvironment.HasValue)
+				{
+					_isDevEnvironment = IsDevEnvironmentInternal();
+				}
 
-				if (HostingEnvironment.IsDevelopmentEnvironment)
-					return true;
-
-				if (System.Diagnostics.Debugger.IsAttached)
-					return true;
-
-				// if there's a 'SmartStore.NET.sln' in one of the parent folders,
-				// then we're likely in a dev environment
-				if (FindSolutionRoot(HostingEnvironment.MapPath("~/")) != null)
-					return true;
-
-				return false;
+				return _isDevEnvironment.Value;
 			}
+		}
+
+		private static bool IsDevEnvironmentInternal()
+		{
+			if (!HostingEnvironment.IsHosted)
+				return true;
+
+			if (HostingEnvironment.IsDevelopmentEnvironment)
+				return true;
+
+			if (System.Diagnostics.Debugger.IsAttached)
+				return true;
+
+			// if there's a 'SmartStore.NET.sln' in one of the parent folders,
+			// then we're likely in a dev environment
+			if (FindSolutionRoot(HostingEnvironment.MapPath("~/")) != null)
+				return true;
+
+			return false;
 		}
 
 		private static DirectoryInfo FindSolutionRoot(string currentDir)
@@ -168,7 +182,7 @@ namespace SmartStore.Utilities
 
 			return FastProperty.ObjectToDictionary(
 				obj,
-				key => key.Replace("_", "-"));
+				key => key.Replace("_", "-").Replace("@", ""));
 		}
 
 		/// <summary>
@@ -217,6 +231,39 @@ namespace SmartStore.Utilities
 				output = default(T);
 				return false;
 			}
+		}
+
+		public static bool IsTruthy(object value)
+		{
+			if (value == null)
+				return false;
+
+			switch (value)
+			{
+				case string x:
+					return x.HasValue();
+				case bool x:
+					return x == true;
+				case DateTime x:
+					return x > DateTime.MinValue;
+				case TimeSpan x:
+					return x > TimeSpan.MinValue;
+				case Guid x:
+					return x != Guid.Empty;
+				case IComparable x:
+					return x.CompareTo(0) != 0;
+				case IEnumerable<object> x:
+					return x.Any();
+				case IEnumerable x:
+					return x.GetEnumerator().MoveNext();
+			}
+
+			if (value.GetType().IsNullable(out var wrappedType))
+			{
+				return IsTruthy(Convert.ChangeType(value, wrappedType));
+			}
+
+			return true;
 		}
 	}
 }

@@ -44,9 +44,6 @@ namespace SmartStore.Services.Media
 				// save to storage
 				_storageProvider.Value.Save(download.ToMedia(), downloadBinary);
 			}
-
-			// event notification
-			_eventPubisher.EntityUpdated(download);
 		}
 
 		public virtual Download GetDownloadById(int downloadId)
@@ -70,11 +67,7 @@ namespace SmartStore.Services.Media
 			var downloads = query.ToList();
 
 			// sort by passed identifier sequence
-			var sortQuery = from i in downloadIds
-							join d in downloads on i equals d.Id
-							select d;
-
-			return sortQuery.ToList();
+			return downloads.OrderBySequence(downloadIds).ToList();
 		}
 
         public virtual Download GetDownloadByGuid(Guid downloadGuid)
@@ -98,9 +91,6 @@ namespace SmartStore.Services.Media
 
 			// delete entity
 			_downloadRepository.Delete(download);
-
-			// event notification
-			_eventPubisher.EntityDeleted(download);
         }
 
         public virtual void InsertDownload(Download download, byte[] downloadBinary)
@@ -111,9 +101,6 @@ namespace SmartStore.Services.Media
 
 			// save to storage
 			_storageProvider.Value.Save(download.ToMedia(), downloadBinary);
-
-			// event notification
-			_eventPubisher.EntityInserted(download);
         }
 
 		public virtual void UpdateDownload(Download download)

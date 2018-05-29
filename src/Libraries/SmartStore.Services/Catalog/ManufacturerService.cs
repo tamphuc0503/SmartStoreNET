@@ -16,8 +16,8 @@ namespace SmartStore.Services.Catalog
     {
         private const string PRODUCTMANUFACTURERS_ALLBYMANUFACTURERID_KEY = "SmartStore.productmanufacturer.allbymanufacturerid-{0}-{1}-{2}-{3}-{4}";
         private const string PRODUCTMANUFACTURERS_ALLBYPRODUCTID_KEY = "SmartStore.productmanufacturer.allbyproductid-{0}-{1}-{2}";
-        private const string MANUFACTURERS_PATTERN_KEY = "SmartStore.manufacturer.";
-        private const string PRODUCTMANUFACTURERS_PATTERN_KEY = "SmartStore.productmanufacturer.";
+        private const string MANUFACTURERS_PATTERN_KEY = "SmartStore.manufacturer.*";
+        private const string PRODUCTMANUFACTURERS_PATTERN_KEY = "SmartStore.productmanufacturer.*";
 
         private readonly IRepository<Manufacturer> _manufacturerRepository;
         private readonly IRepository<ProductManufacturer> _productManufacturerRepository;
@@ -130,9 +130,6 @@ namespace SmartStore.Services.Catalog
             //cache
             _requestCache.RemoveByPattern(MANUFACTURERS_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTMANUFACTURERS_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityInserted(manufacturer);
         }
 
         public virtual void UpdateManufacturer(Manufacturer manufacturer)
@@ -145,9 +142,6 @@ namespace SmartStore.Services.Catalog
             //cache
             _requestCache.RemoveByPattern(MANUFACTURERS_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTMANUFACTURERS_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityUpdated(manufacturer);
         }
 
 		public virtual void UpdateHasDiscountsApplied(Manufacturer manufacturer)
@@ -165,12 +159,8 @@ namespace SmartStore.Services.Catalog
 
             _productManufacturerRepository.Delete(productManufacturer);
 
-            //cache
             _requestCache.RemoveByPattern(MANUFACTURERS_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTMANUFACTURERS_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityDeleted(productManufacturer);
         }
 
         public virtual IPagedList<ProductManufacturer> GetProductManufacturersByManufacturerId(int manufacturerId, int pageIndex, int pageSize, bool showHidden = false)
@@ -184,8 +174,8 @@ namespace SmartStore.Services.Catalog
                 var query = from pm in _productManufacturerRepository.Table
                             join p in _productRepository.Table on pm.ProductId equals p.Id
                             where pm.ManufacturerId == manufacturerId &&
-                                  !p.Deleted &&
-                                  (showHidden || p.Published)
+                                  !p.Deleted && !p.IsSystemProduct &&
+								  (showHidden || p.Published)
                             orderby pm.DisplayOrder
                             select pm;
 
@@ -239,7 +229,7 @@ namespace SmartStore.Services.Catalog
 					{
 						if (!QuerySettings.IgnoreMultiStore)
 						{
-							//Store mapping
+							// Store mapping
 							var currentStoreId = _storeContext.CurrentStore.Id;
 							query = from pm in query
 									join m in _manufacturerRepository.Table on pm.ManufacturerId equals m.Id
@@ -250,7 +240,7 @@ namespace SmartStore.Services.Catalog
 									select pm;
 						}
 
-						//only distinct manufacturers (group by ID)
+						// Only distinct manufacturers (group by ID)
 						query = from pm in query
 								group pm by pm.Id into mGroup
 								orderby mGroup.Key
@@ -285,8 +275,8 @@ namespace SmartStore.Services.Catalog
 
 			var query =
 				from pm in _productManufacturerRepository.TableUntracked.Expand(x => x.Manufacturer).Expand(x => x.Manufacturer.Picture)
-				join m in _manufacturerRepository.TableUntracked on pm.ManufacturerId equals m.Id
-				where productIds.Contains(pm.ProductId)
+				//join m in _manufacturerRepository.TableUntracked on pm.ManufacturerId equals m.Id // Eager loading does not work with this join
+				where !pm.Manufacturer.Deleted && productIds.Contains(pm.ProductId)
 				select pm;
 
 			var map = query
@@ -313,12 +303,9 @@ namespace SmartStore.Services.Catalog
 
             _productManufacturerRepository.Insert(productManufacturer);
 
-            //cache
             _requestCache.RemoveByPattern(MANUFACTURERS_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTMANUFACTURERS_PATTERN_KEY);
 
-            //event notification
-            _eventPublisher.EntityInserted(productManufacturer);
         }
 
         public virtual void UpdateProductManufacturer(ProductManufacturer productManufacturer)
@@ -328,12 +315,8 @@ namespace SmartStore.Services.Catalog
 
             _productManufacturerRepository.Update(productManufacturer);
 
-            //cache
             _requestCache.RemoveByPattern(MANUFACTURERS_PATTERN_KEY);
             _requestCache.RemoveByPattern(PRODUCTMANUFACTURERS_PATTERN_KEY);
-
-            //event notification
-            _eventPublisher.EntityUpdated(productManufacturer);
         }
     }
 }

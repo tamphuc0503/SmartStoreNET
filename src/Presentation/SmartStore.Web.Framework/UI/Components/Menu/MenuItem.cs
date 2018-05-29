@@ -1,12 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Web.Routing;
-using SmartStore.Collections;
 
 namespace SmartStore.Web.Framework.UI
 {
-
     public class MenuItem : NavigationItem, ICloneable<MenuItem>
     {
         public MenuItem()
@@ -53,7 +49,5 @@ namespace SmartStore.Web.Framework.UI
 		{
 			return this.Clone();
 		}
-
     }
-
 }

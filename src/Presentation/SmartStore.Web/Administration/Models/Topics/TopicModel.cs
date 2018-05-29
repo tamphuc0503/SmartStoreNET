@@ -11,30 +11,12 @@ using SmartStore.Web.Framework.Modelling;
 namespace SmartStore.Admin.Models.Topics
 {
 	[Validator(typeof(TopicValidator))]
-    public class TopicModel : TabbableModel, ILocalizedModel<TopicLocalizedModel>
-    {
-        #region widget zone names
-        private readonly static string[] s_widgetZones = new string[] { 
-            "main_column_before", 
-            "main_column_after", 
-            "left_side_column_before", 
-            "left_side_column_before", 
-            "right_side_column_before", 
-            "right_side_column_before", 
-            "notifications", 
-            "body_start_html_tag_after",
-            "content_before", 
-            "content_after", 
-            "body_end_html_tag_before"
-        };
-        #endregion
-        
+    public class TopicModel : TabbableModel, ILocalizedModel<TopicLocalizedModel>, IStoreSelector
+    {       
         public TopicModel()
         {
 			WidgetWrapContent = true;
 			Locales = new List<TopicLocalizedModel>();
-			AvailableStores = new List<StoreModel>();
-            AvailableWidgetZones = s_widgetZones;
             AvailableTitleTags = new List<SelectListItem>(); 
             AvailableTitleTags.Add(new SelectListItem { Text = "h1", Value = "h1" });
             AvailableTitleTags.Add(new SelectListItem { Text = "h2", Value = "h2" });
@@ -46,14 +28,13 @@ namespace SmartStore.Admin.Models.Topics
             AvailableTitleTags.Add(new SelectListItem { Text = "span", Value = "span" });
         }
 
+		// Store mapping
 		[SmartResourceDisplayName("Admin.Common.Store.LimitedTo")]
 		public bool LimitedToStores { get; set; }
-
-		[SmartResourceDisplayName("Admin.Common.Store.AvailableFor")]
-		public List<StoreModel> AvailableStores { get; set; }
+		public IEnumerable<SelectListItem> AvailableStores { get; set; }
 		public int[] SelectedStoreIds { get; set; }
 
-        [SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.SystemName")]
+		[SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.SystemName")]
         [AllowHtml]
         public string SystemName { get; set; }
 
@@ -91,12 +72,16 @@ namespace SmartStore.Admin.Models.Topics
         [AllowHtml]
         public string MetaTitle { get; set; }
 
-        [SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.RenderAsWidget")]
+		[SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.SeName")]
+		public string SeName { get; set; }
+
+		[SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.RenderAsWidget")]
         public bool RenderAsWidget { get; set; }
 
         [SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.WidgetZone")]
-        [UIHint("WidgetZone")]
-        public string WidgetZone { get; set; }
+		[UIHint("WidgetZone")]
+		public string[] WidgetZone { get; set; }
+		public MultiSelectList AvailableWidgetZones { get; set; }
 
 		[SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.WidgetWrapContent")]
 		public bool WidgetWrapContent { get; set; }
@@ -113,7 +98,8 @@ namespace SmartStore.Admin.Models.Topics
         [SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.TitleTag")]
         public string TitleTag { get; set; }
 
-        public string[] AvailableWidgetZones { get; private set; }
+        public bool IsSystemTopic { get; set; }
+
         public IList<SelectListItem> AvailableTitleTags { get; private set; }
 
         public IList<TopicLocalizedModel> Locales { get; set; }
@@ -142,5 +128,8 @@ namespace SmartStore.Admin.Models.Topics
         [SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.MetaTitle")]
         [AllowHtml]
         public string MetaTitle { get; set; }
-    }
+
+		[SmartResourceDisplayName("Admin.ContentManagement.Topics.Fields.SeName")]
+		public string SeName { get; set; }
+	}
 }

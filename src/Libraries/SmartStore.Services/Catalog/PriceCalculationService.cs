@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Linq;
 using System.Web;
 using SmartStore.Core.Domain.Catalog;
 using SmartStore.Core.Domain.Customers;
 using SmartStore.Core.Domain.Discounts;
 using SmartStore.Core.Domain.Orders;
+using SmartStore.Services.Catalog.Extensions;
+using SmartStore.Services.Catalog.Modelling;
 using SmartStore.Services.Discounts;
 using SmartStore.Services.Media;
 using SmartStore.Services.Tax;
+using SmartStore.Core.Domain.Directory;
+using SmartStore.Core.Domain.Tax;
 
 namespace SmartStore.Services.Catalog
 {
@@ -30,8 +33,9 @@ namespace SmartStore.Services.Catalog
 		private readonly ICommonServices _services;
 		private readonly HttpRequestBase _httpRequestBase;
 		private readonly ITaxService _taxService;
+		private readonly TaxSettings _taxSettings;
 
-        public PriceCalculationService(
+		public PriceCalculationService(
             IDiscountService discountService,
 			ICategoryService categoryService,
 			IManufacturerService manufacturerService,
@@ -43,20 +47,22 @@ namespace SmartStore.Services.Catalog
 			IDownloadService downloadService,
 			ICommonServices services,
 			HttpRequestBase httpRequestBase,
-			ITaxService taxService)
+			ITaxService taxService,
+			TaxSettings taxSettings)
         {
-            this._discountService = discountService;
-            this._categoryService = categoryService;
-			this._manufacturerService = manufacturerService;
-            this._productAttributeParser = productAttributeParser;
-			this._productService = productService;
-            this._shoppingCartSettings = shoppingCartSettings;
-            this._catalogSettings = catalogSettings;
-			this._productAttributeService = productAttributeService;
-			this._downloadService = downloadService;
-			this._services = services;
-			this._httpRequestBase = httpRequestBase;
-			this._taxService = taxService;
+            _discountService = discountService;
+            _categoryService = categoryService;
+			_manufacturerService = manufacturerService;
+            _productAttributeParser = productAttributeParser;
+			_productService = productService;
+            _shoppingCartSettings = shoppingCartSettings;
+            _catalogSettings = catalogSettings;
+			_productAttributeService = productAttributeService;
+			_downloadService = downloadService;
+			_services = services;
+			_httpRequestBase = httpRequestBase;
+			_taxService = taxService;
+			_taxSettings = taxSettings;
         }
         
         #region Utilities
@@ -76,13 +82,21 @@ namespace SmartStore.Services.Catalog
 			// check discounts assigned to the product
 			if (product.HasDiscountsApplied)
             {
-                //we use this property ("HasDiscountsApplied") for performance optimziation to avoid unnecessary database calls
+                // We use this property ("HasDiscountsApplied") for performance optimziation to avoid unnecessary database calls
 				IEnumerable<Discount> appliedDiscounts = null;
-
+				
 				if (context == null)
+				{
 					appliedDiscounts = product.AppliedDiscounts;
+				}	
 				else
-					appliedDiscounts = context.AppliedDiscounts.Load(product.Id);
+				{
+					if (!context.AppliedDiscounts.FullyLoaded)
+					{
+						context.AppliedDiscounts.LoadAll();
+					}
+					appliedDiscounts = context.AppliedDiscounts.GetOrLoad(product.Id);
+				}		
 
 				if (appliedDiscounts != null)
 				{
@@ -97,14 +111,15 @@ namespace SmartStore.Services.Catalog
             }
 
             // check discounts assigned to categories
-            if (_discountService.GetAllDiscounts(DiscountType.AssignedToCategories).Any())
+            var discountsAssignedToCategories = _discountService.GetAllDiscounts(DiscountType.AssignedToCategories);
+            if (discountsAssignedToCategories != null && discountsAssignedToCategories.Any())
             {
 				IEnumerable<ProductCategory> productCategories = null;
 				
 				if (context == null)
 					productCategories = _categoryService.GetProductCategoriesByProductId(product.Id);
 				else
-					productCategories = context.ProductCategories.Load(product.Id);
+					productCategories = context.ProductCategories.GetOrLoad(product.Id);
 
                 if (productCategories != null)
                 {
@@ -128,15 +143,17 @@ namespace SmartStore.Services.Catalog
                 }
             }
 
-			// check discounts assigned to manufacturers
-			if (_discountService.GetAllDiscounts(DiscountType.AssignedToManufacturers).Any())
+            // check discounts assigned to manufacturers
+            var discountsAssignedToManufacturers = _discountService.GetAllDiscounts(DiscountType.AssignedToManufacturers);
+
+            if (discountsAssignedToManufacturers != null && discountsAssignedToManufacturers.Any())
 			{
 				IEnumerable<ProductManufacturer> productManufacturers = null;
 
 				if (context == null)
 					productManufacturers = _manufacturerService.GetProductManufacturersByProductId(product.Id);
 				else
-					productManufacturers = context.ProductManufacturers.Load(product.Id);
+					productManufacturers = context.ProductManufacturers.GetOrLoad(product.Id);
 
 				if (productManufacturers != null)
 				{
@@ -187,7 +204,7 @@ namespace SmartStore.Services.Catalog
 			}
 			else
 			{
-				tierPrices = context.TierPrices.Load(product.Id)
+				tierPrices = context.TierPrices.GetOrLoad(product.Id)
 					.RemoveDuplicatedQuantities();
 			}
 
@@ -206,21 +223,83 @@ namespace SmartStore.Services.Catalog
                     continue;
 
                 //save new price
-                previousPrice = tierPrice.Price;
+                if (tierPrice.CalculationMethod == TierPriceCalculationMethod.Fixed)
+                {
+                    previousPrice = tierPrice.Price;
+                }
+                else if (tierPrice.CalculationMethod == TierPriceCalculationMethod.Percental)
+                {
+                    previousPrice = product.Price - (product.Price / 100 * tierPrice.Price);
+                }
+                else
+                {
+                    previousPrice = product.Price - tierPrice.Price;
+                }
+                
                 previousQty = tierPrice.Quantity;
             }
             
             return previousPrice;
         }
 
-		protected virtual decimal GetPreselectedPrice(
-			Product product,
-			Customer customer,
-			PriceCalculationContext context,
-			ProductBundleItemData bundleItem,
-			IEnumerable<ProductBundleItemData> bundleItems)
-		{
-			var taxRate = decimal.Zero;
+        protected virtual decimal GetTierPriceAttributeAdjustment(Product product, Customer customer, int quantity, PriceCalculationContext context = null, decimal adjustment = 0)
+        {
+
+            if (!product.HasTierPrices)
+                return decimal.Zero;
+
+            IEnumerable<TierPrice> tierPrices = null;
+
+            if (context == null)
+            {
+                tierPrices = product.TierPrices
+                    .OrderBy(tp => tp.Quantity)
+                    .FilterByStore(_services.StoreContext.CurrentStore.Id)
+                    .FilterForCustomer(customer)
+                    .ToList()
+                    .RemoveDuplicatedQuantities();
+            }
+            else
+            {
+                tierPrices = context.TierPrices.GetOrLoad(product.Id)
+                    .RemoveDuplicatedQuantities();
+            }
+
+            if (tierPrices == null)
+                return decimal.Zero;
+
+            int previousQty = 1;
+            decimal previousPrice = 0;
+
+            foreach (var tierPrice in tierPrices)
+            {
+                //check quantity
+                if (quantity < tierPrice.Quantity)
+                    continue;
+                if (tierPrice.Quantity < previousQty)
+                    continue;
+
+                //save new price
+                if (tierPrice.CalculationMethod == TierPriceCalculationMethod.Percental && _catalogSettings.ApplyTierPricePercentageToAttributePriceAdjustments)
+                {
+                    previousPrice = adjustment - (adjustment / 100 * tierPrice.Price);
+                }
+                
+                previousQty = tierPrice.Quantity;
+            }
+            
+            return previousPrice;
+        }
+
+        protected virtual decimal GetPreselectedPrice(
+            Product product,
+            Customer customer,
+			Currency currency,
+            PriceCalculationContext context,
+            ProductBundleItemData bundleItem,
+            IEnumerable<ProductBundleItemData> bundleItems)
+        {
+            var taxRate = decimal.Zero;
 			var attributesTotalPriceBase = decimal.Zero;
 			var preSelectedPriceAdjustmentBase = decimal.Zero;
 			var isBundle = (product.ProductType == ProductType.BundledProduct);
@@ -228,11 +307,11 @@ namespace SmartStore.Services.Catalog
 			var isBundlePricing = (bundleItem != null && !bundleItem.Item.BundleProduct.BundlePerItemPricing);
 			var bundleItemId = (bundleItem == null ? 0 : bundleItem.Item.Id);
 
-			var selectedAttributes = new NameValueCollection();
+			var query = new ProductVariantQuery();
 			var selectedAttributeValues = new List<ProductVariantAttributeValue>();
-			var attributes = context.Attributes.Load(product.Id);
+			var attributes = context.Attributes.GetOrLoad(product.Id);
 
-			// 1. fill selectedAttributes with initially selected attributes
+			// 1. Fill query with initially selected attributes.
 			foreach (var attribute in attributes.Where(x => x.ProductVariantAttributeValues.Count > 0 && x.ShouldHaveValues()))
 			{
 				int preSelectedValueId = 0;
@@ -252,37 +331,55 @@ namespace SmartStore.Services.Catalog
 
 					if (!isBundlePricing && pvaValue.IsPreSelected)
 					{
-						decimal attributeValuePriceAdjustment = GetProductVariantAttributeValuePriceAdjustment(pvaValue);
-						decimal priceAdjustmentBase = _taxService.GetProductPrice(product, attributeValuePriceAdjustment, out taxRate);
+						var includingTax = _services.WorkContext.TaxDisplayType == TaxDisplayType.IncludingTax;
+						var attributeValuePriceAdjustment = GetProductVariantAttributeValuePriceAdjustment(pvaValue, product, customer, context, 1);
+						var priceAdjustmentBase = _taxService.GetProductPrice(product, product.TaxCategoryId, attributeValuePriceAdjustment,
+							includingTax, customer, currency, _taxSettings.PricesIncludeTax, out taxRate);
 
 						preSelectedPriceAdjustmentBase = decimal.Add(preSelectedPriceAdjustmentBase, priceAdjustmentBase);
 					}
 				}
 
-				// value pre-selected by a bundle item filter discards the default pre-selection
+				// Value pre-selected by a bundle item filter discards the default pre-selection.
 				if (preSelectedValueId != 0 && (defaultValue = pvaValues.FirstOrDefault(x => x.Id == preSelectedValueId)) != null)
 				{
 					//defaultValue.IsPreSelected = true;
 					selectedAttributeValues.Add(defaultValue);
-					selectedAttributes.AddProductAttribute(attribute.ProductAttributeId, attribute.Id, defaultValue.Id, product.Id, bundleItemId);
+					query.AddVariant(new ProductVariantQueryItem(defaultValue.Id.ToString())
+					{
+						ProductId = product.Id,
+						BundleItemId = bundleItemId,
+						AttributeId = attribute.ProductAttributeId,
+						VariantAttributeId = attribute.Id,
+						Alias = attribute.ProductAttribute.Alias,
+						ValueAlias = defaultValue.Alias
+					});
 				}
 				else
 				{
 					foreach (var value in pvaValues.Where(x => x.IsPreSelected))
 					{
 						selectedAttributeValues.Add(value);
-						selectedAttributes.AddProductAttribute(attribute.ProductAttributeId, attribute.Id, value.Id, product.Id, bundleItemId);
+						query.AddVariant(new ProductVariantQueryItem(value.Id.ToString())
+						{
+							ProductId = product.Id,
+							BundleItemId = bundleItemId,
+							AttributeId = attribute.ProductAttributeId,
+							VariantAttributeId = attribute.Id,
+							Alias = attribute.ProductAttribute.Alias,
+							ValueAlias = value.Alias
+						});
 					}
 				}
 			}
 
-			// 2. find attribute combination for selected attributes and merge it
-			if (!isBundle && selectedAttributes.Count > 0)
+			// 2. Find attribute combination for selected attributes and merge it.
+			if (!isBundle && query.Variants.Count > 0)
 			{
-				var attributeXml = selectedAttributes.CreateSelectedAttributesXml(product.Id, attributes, _productAttributeParser, _services.Localization,
-					_downloadService, _catalogSettings, _httpRequestBase, new List<string>(), true, bundleItemId);
+				var attributeXml = query.CreateSelectedAttributesXml(product.Id, bundleItemId, attributes, _productAttributeParser, _services.Localization,
+					_downloadService, _catalogSettings, _httpRequestBase, new List<string>());
 
-				var combinations = context.AttributeCombinations.Load(product.Id);
+				var combinations = context.AttributeCombinations.GetOrLoad(product.Id);
 
 				var selectedCombination = combinations.FirstOrDefault(x => _productAttributeParser.AreProductAttributesEqual(x.AttributesXml, attributeXml));
 
@@ -302,7 +399,7 @@ namespace SmartStore.Services.Catalog
 			{
 				if (selectedAttributeValues.Count > 0)
 				{
-					selectedAttributeValues.Each(x => attributesTotalPriceBase += GetProductVariantAttributeValuePriceAdjustment(x));
+					selectedAttributeValues.Each(x => attributesTotalPriceBase += GetProductVariantAttributeValuePriceAdjustment(x, product, customer, context, 1));
 				}
 				else
 				{
@@ -319,7 +416,10 @@ namespace SmartStore.Services.Catalog
 			return result;
 		}
 
-		public virtual PriceCalculationContext CreatePriceCalculationContext(IEnumerable<Product> products = null, Customer customer = null, int? storeId = null)
+		public virtual PriceCalculationContext CreatePriceCalculationContext(
+			IEnumerable<Product> products = null, 
+			Customer customer = null, 
+			int? storeId = null)
 		{
 			if (customer == null)
 				customer = _services.WorkContext.CurrentCustomer;
@@ -333,7 +433,8 @@ namespace SmartStore.Services.Catalog
 				x => _productService.GetTierPricesByProductIds(x, customer, storeId.Value),
 				x => _categoryService.GetProductCategoriesByProductIds(x, true),
 				x => _manufacturerService.GetProductManufacturersByProductIds(x),
-				x => _productService.GetAppliedDiscountsByProductIds(x)
+				x => _productService.GetAppliedDiscountsByProductIds(x),
+				x => _productService.GetBundleItemsByProductIds(x, true)
 			);
 
 			return context;
@@ -380,8 +481,7 @@ namespace SmartStore.Services.Catalog
 		/// <param name="product">Product</param>
         /// <param name="includeDiscounts">A value indicating whether include discounts or not for final price computation</param>
         /// <returns>Final price</returns>
-		public virtual decimal GetFinalPrice(Product product, 
-            bool includeDiscounts)
+		public virtual decimal GetFinalPrice(Product product, bool includeDiscounts)
         {
             var customer = _services.WorkContext.CurrentCustomer;
 			return GetFinalPrice(product, customer, includeDiscounts);
@@ -394,9 +494,7 @@ namespace SmartStore.Services.Catalog
         /// <param name="customer">The customer</param>
         /// <param name="includeDiscounts">A value indicating whether include discounts or not for final price computation</param>
         /// <returns>Final price</returns>
-		public virtual decimal GetFinalPrice(Product product, 
-            Customer customer, 
-            bool includeDiscounts)
+		public virtual decimal GetFinalPrice(Product product, Customer customer, bool includeDiscounts)
         {
 			return GetFinalPrice(product, customer, decimal.Zero, includeDiscounts);
         }
@@ -424,8 +522,9 @@ namespace SmartStore.Services.Catalog
             bool includeDiscounts, 
             int quantity,
 			ProductBundleItemData bundleItem = null,
-			PriceCalculationContext context = null)
-        {
+			PriceCalculationContext context = null,
+			bool isTierPrice = false)
+		{
             //initial price
 			decimal result = product.Price;
 
@@ -434,12 +533,24 @@ namespace SmartStore.Services.Catalog
             if (specialPrice.HasValue)
                 result = specialPrice.Value;
 
+            if (isTierPrice) 
+                includeDiscounts = true;
+
             //tier prices
-			if (product.HasTierPrices && !bundleItem.IsValid())
+            if (product.HasTierPrices && !bundleItem.IsValid() && includeDiscounts)
             {
+
 				decimal? tierPrice = GetMinimumTierPrice(product, customer, quantity, context);
-				if (tierPrice.HasValue)
-					result = Math.Min(result, tierPrice.Value);
+                Discount appliedDiscountTest = null;
+                decimal discountAmountTest = GetDiscountAmount(product, customer, additionalCharge, quantity, out appliedDiscountTest, bundleItem);
+                decimal discountProductTest = result - discountAmountTest;
+
+				//decimal? tierPrice = GetMinimumTierPrice(product, customer, quantity);
+                if (tierPrice.HasValue && tierPrice < discountProductTest)
+                {
+                    includeDiscounts = false;
+                    result = Math.Min(result, tierPrice.Value);
+                }
             }
 
             //discount + additional charge
@@ -473,7 +584,15 @@ namespace SmartStore.Services.Catalog
 			if (product.ProductType == ProductType.BundledProduct && product.BundlePerItemPricing)
 			{
 				decimal result = decimal.Zero;
-				var items = bundleItems ?? _productService.GetBundleItems(product.Id);
+
+				var items = bundleItems;
+				if (items == null)
+				{
+					//var bundleEntities = context.ProductBundleItems.GetOrLoad(product.Id).Select(x => new ProductBundleItemData(x));
+					items = context == null 
+						? _productService.GetBundleItems(product.Id) 
+						: context.ProductBundleItems.GetOrLoad(product.Id).Select(x => new ProductBundleItemData(x));
+				}
 
 				foreach (var itemData in items.Where(x => x.IsValid()))
 				{
@@ -484,6 +603,7 @@ namespace SmartStore.Services.Catalog
 
 				return (result < decimal.Zero ? decimal.Zero : result);
 			}
+
 			return GetFinalPrice(product, customer, additionalCharge, includeDiscounts, quantity, bundleItem, context);
 		}
 
@@ -519,13 +639,13 @@ namespace SmartStore.Services.Catalog
 
 			if (!displayFromMessage && product.ProductType != ProductType.BundledProduct)
 			{
-				var attributes = context.Attributes.Load(product.Id);
+				var attributes = context.Attributes.GetOrLoad(product.Id);
 				displayFromMessage = attributes.Any(x => x.ProductVariantAttributeValues.Any(y => y.PriceAdjustment != decimal.Zero));
 			}
 
 			if (!displayFromMessage && product.HasTierPrices && !isBundlePerItemPricing)
 			{
-				var tierPrices = context.TierPrices.Load(product.Id)
+				var tierPrices = context.TierPrices.GetOrLoad(product.Id)
 					.RemoveDuplicatedQuantities();
 
 				displayFromMessage = (tierPrices.Count > 0 && !(tierPrices.Count == 1 && tierPrices.First().Quantity <= 1));
@@ -578,7 +698,7 @@ namespace SmartStore.Services.Catalog
 			return lowestPrice;
 		}
 
-		public virtual decimal GetPreselectedPrice(Product product, Customer customer, PriceCalculationContext context)
+		public virtual decimal GetPreselectedPrice(Product product, Customer customer, Currency currency, PriceCalculationContext context)
 		{
 			if (product == null)
 				throw new ArgumentNullException("product");
@@ -600,14 +720,14 @@ namespace SmartStore.Services.Catalog
 				foreach (var bundleItem in bundleItems.Where(x => x.Item.Product.CanBeBundleItem()))
 				{
 					// fetch bundleItems.AdditionalCharge for all bundle items
-					var unused = GetPreselectedPrice(bundleItem.Item.Product, customer, context, bundleItem, bundleItems);
+					var unused = GetPreselectedPrice(bundleItem.Item.Product, customer, currency, context, bundleItem, bundleItems);
 				}
 
-				result = GetPreselectedPrice(product, customer, context, null, bundleItems);
+				result = GetPreselectedPrice(product, customer, currency, context, null, bundleItems);
 			}
 			else
 			{
-				result = GetPreselectedPrice(product, customer, context, null, null);
+				result = GetPreselectedPrice(product, customer, currency, context, null, null);
 			}
 
 			return result;
@@ -799,7 +919,6 @@ namespace SmartStore.Services.Catalog
 					product.MergeWithCombination(shoppingCartItem.Item.AttributesXml, _productAttributeParser);
 
 					var attributesTotalPrice = decimal.Zero;
-
 					var pvaValuesEnum = _productAttributeParser.ParseProductVariantAttributeValues(shoppingCartItem.Item.AttributesXml);
 
 					if (pvaValuesEnum != null)
@@ -808,7 +927,7 @@ namespace SmartStore.Services.Catalog
 
 						foreach (var pvaValue in pvaValues)
 						{
-							attributesTotalPrice += GetProductVariantAttributeValuePriceAdjustment(pvaValue);
+							attributesTotalPrice += GetProductVariantAttributeValuePriceAdjustment(pvaValue, product, customer, null, shoppingCartItem.Item.Quantity);
 						}
 					}
 
@@ -816,9 +935,7 @@ namespace SmartStore.Services.Catalog
                 }
             }
 
-            if (_shoppingCartSettings.RoundPricesDuringCalculation)
-                finalPrice = Math.Round(finalPrice, 2);
-
+            finalPrice = finalPrice.RoundIfEnabledFor(_services.WorkContext.WorkingCurrency);
             return finalPrice;
         }
         
@@ -843,26 +960,28 @@ namespace SmartStore.Services.Catalog
         /// <returns>Discount amount</returns>
 		public virtual decimal GetDiscountAmount(OrganizedShoppingCartItem shoppingCartItem, out Discount appliedDiscount)
         {
-            var customer = shoppingCartItem.Item.Customer;
-            appliedDiscount = null;
-			decimal totalDiscountAmount = decimal.Zero;
+			appliedDiscount = null;
+
+			var customer = shoppingCartItem.Item.Customer;
+			var totalDiscountAmount = decimal.Zero;
 			var product = shoppingCartItem.Item.Product;
+			var quantity = shoppingCartItem.Item.Quantity;
+
 			if (product != null)
             {
-                decimal attributesTotalPrice = decimal.Zero;
-
+                var attributesTotalPrice = decimal.Zero;
                 var pvaValues = _productAttributeParser.ParseProductVariantAttributeValues(shoppingCartItem.Item.AttributesXml).ToList();
+
                 foreach (var pvaValue in pvaValues)
                 {
-                    attributesTotalPrice += GetProductVariantAttributeValuePriceAdjustment(pvaValue);
+                    attributesTotalPrice += GetProductVariantAttributeValuePriceAdjustment(pvaValue, product, customer, null, quantity);
                 }
 
-				decimal productDiscountAmount = GetDiscountAmount(product, customer, attributesTotalPrice, shoppingCartItem.Item.Quantity, out appliedDiscount);
-				totalDiscountAmount = productDiscountAmount * shoppingCartItem.Item.Quantity;
+				var productDiscountAmount = GetDiscountAmount(product, customer, attributesTotalPrice, quantity, out appliedDiscount);
+				totalDiscountAmount = productDiscountAmount * quantity;
             }
-            
-            if (_shoppingCartSettings.RoundPricesDuringCalculation)
-				totalDiscountAmount = Math.Round(totalDiscountAmount, 2);
+
+            totalDiscountAmount = totalDiscountAmount.RoundIfEnabledFor(_services.WorkContext.WorkingCurrency);
 			return totalDiscountAmount;
         }
 
@@ -872,15 +991,25 @@ namespace SmartStore.Services.Catalog
 		/// </summary>
 		/// <param name="attributeValue">Product variant attribute value</param>
 		/// <returns>Price adjustment of a variant attribute value</returns>
-		public virtual decimal GetProductVariantAttributeValuePriceAdjustment(ProductVariantAttributeValue attributeValue)
+		public virtual decimal GetProductVariantAttributeValuePriceAdjustment(ProductVariantAttributeValue attributeValue,
+            Product product, Customer customer, PriceCalculationContext context, int productQuantity = 1)
 		{
 			if (attributeValue == null)
 				throw new ArgumentNullException("attributeValue");
 
 			if (attributeValue.ValueType == ProductVariantAttributeValueType.Simple)
-				return attributeValue.PriceAdjustment;
-
-			if (attributeValue.ValueType == ProductVariantAttributeValueType.ProductLinkage)
+            {
+                if (productQuantity > 1 && attributeValue.PriceAdjustment > 0)
+                {
+                    var tierPriceAttributeAdjustment = GetTierPriceAttributeAdjustment(product, customer, productQuantity, context, attributeValue.PriceAdjustment);
+                    if(tierPriceAttributeAdjustment != 0)
+                        return tierPriceAttributeAdjustment;
+                }
+                
+                return attributeValue.PriceAdjustment;
+            }
+			
+            if (attributeValue.ValueType == ProductVariantAttributeValueType.ProductLinkage)
 			{
 				var linkedProduct = _productService.GetProductById(attributeValue.LinkedProductId);
 

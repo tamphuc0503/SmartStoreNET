@@ -15,7 +15,7 @@ namespace SmartStore.Services.Seo
 		/// 0 = segment (EntityName.IdRange), 1 = language id
 		/// </summary>
 		const string URLRECORD_SEGMENT_KEY = "urlrecord:{0}-lang-{1}";
-		const string URLRECORD_SEGMENT_PATTERN = "urlrecord:{0}";
+		const string URLRECORD_SEGMENT_PATTERN = "urlrecord:{0}*";
 		const string URLRECORD_ALL_PATTERN = "urlrecord:";
 		const string URLRECORD_ALL_ACTIVESLUGS_KEY = "urlrecord:all-active-slugs";
 
@@ -155,6 +155,7 @@ namespace SmartStore.Services.Seo
 			var query = from ur in _urlRecordRepository.Table
 						where ur.Slug == slug
 						select ur;
+
 			var urlRecord = query.FirstOrDefault();
 			return urlRecord;
 		}

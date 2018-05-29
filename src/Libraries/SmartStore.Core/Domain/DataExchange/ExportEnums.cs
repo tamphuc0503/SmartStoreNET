@@ -12,7 +12,8 @@ namespace SmartStore.Core.Domain.DataExchange
 		Manufacturer,
 		Customer,
 		Order,
-		NewsLetterSubscription
+		NewsLetterSubscription,
+		ShoppingCartItem
 	}
 
 	/// <summary>
@@ -131,7 +132,12 @@ namespace SmartStore.Core.Domain.DataExchange
 		/// <summary>
 		/// Whether to provide additional data of attribute combinations
 		/// </summary>
-		UsesAttributeCombination = 1 << 13
+		UsesAttributeCombination = 1 << 13,
+
+		/// <summary>
+		/// Whether to export attribute combinations as products including parent product. Only effective with CanProjectAttributeCombinations.
+		/// </summary>
+		UsesAttributeCombinationParent = 1 << 14
 	}
 
 	/// <summary>

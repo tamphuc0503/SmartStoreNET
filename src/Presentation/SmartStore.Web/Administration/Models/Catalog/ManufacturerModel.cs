@@ -13,15 +13,10 @@ using SmartStore.Web.Framework.Modelling;
 namespace SmartStore.Admin.Models.Catalog
 {
 	[Validator(typeof(ManufacturerValidator))]
-    public class ManufacturerModel : EntityModelBase, ILocalizedModel<ManufacturerLocalizedModel>
+    public class ManufacturerModel : EntityModelBase, ILocalizedModel<ManufacturerLocalizedModel>, IStoreSelector
     {
         public ManufacturerModel()
         {
-            if (PageSize < 1)
-            {
-                PageSize = 5;
-            }
-
             Locales = new List<ManufacturerLocalizedModel>();
             AvailableManufacturerTemplates = new List<SelectListItem>();
         }
@@ -62,17 +57,13 @@ namespace SmartStore.Admin.Models.Catalog
         public int PictureId { get; set; }
 
         [SmartResourceDisplayName("Admin.Catalog.Manufacturers.Fields.PageSize")]
-        public int PageSize { get; set; }
+        public int? PageSize { get; set; }
 
         [SmartResourceDisplayName("Admin.Catalog.Manufacturers.Fields.AllowCustomersToSelectPageSize")]
-        public bool AllowCustomersToSelectPageSize { get; set; }
+        public bool? AllowCustomersToSelectPageSize { get; set; }
 
         [SmartResourceDisplayName("Admin.Catalog.Manufacturers.Fields.PageSizeOptions")]
         public string PageSizeOptions { get; set; }
-
-        [SmartResourceDisplayName("Admin.Catalog.Manufacturers.Fields.PriceRanges")]
-        [AllowHtml]
-        public string PriceRanges { get; set; }
 
         [SmartResourceDisplayName("Admin.Catalog.Manufacturers.Fields.Published")]
         public bool Published { get; set; }
@@ -91,12 +82,10 @@ namespace SmartStore.Admin.Models.Catalog
         
         public IList<ManufacturerLocalizedModel> Locales { get; set; }
 
-		//Store mapping
+		// Store mapping
 		[SmartResourceDisplayName("Admin.Common.Store.LimitedTo")]
 		public bool LimitedToStores { get; set; }
-
-		[SmartResourceDisplayName("Admin.Common.Store.AvailableFor")]
-		public List<StoreModel> AvailableStores { get; set; }
+		public IEnumerable<SelectListItem> AvailableStores { get; set; }
 		public int[] SelectedStoreIds { get; set; }
 
 		public List<Discount> AvailableDiscounts { get; set; }

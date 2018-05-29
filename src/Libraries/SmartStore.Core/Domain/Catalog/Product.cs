@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
+using System.Linq.Expressions;
 using System.Runtime.Serialization;
 using SmartStore.Core.Domain.Directory;
 using SmartStore.Core.Domain.Discounts;
@@ -17,9 +18,43 @@ namespace SmartStore.Core.Domain.Catalog
     /// Represents a product
     /// </summary>
     [DataContract]
-	public partial class Product : BaseEntity, ISoftDeletable, ILocalizedEntity, ISlugSupported, IAclSupported, IStoreMappingSupported, IMergedData
+	public partial class Product : BaseEntity, IAuditable, ISoftDeletable, ILocalizedEntity, ISlugSupported, IAclSupported, IStoreMappingSupported, IMergedData
 	{
-        private ICollection<ProductCategory> _productCategories;
+		#region static
+
+		private static readonly HashSet<string> _visibilityAffectingProductProps = new HashSet<string>();
+
+		static Product()
+		{
+			AddPropsToSet(_visibilityAffectingProductProps,
+				x => x.AvailableEndDateTimeUtc,
+				x => x.AvailableStartDateTimeUtc,
+				x => x.Deleted,
+				x => x.LowStockActivityId,
+				x => x.LimitedToStores,
+				x => x.ManageInventoryMethodId,
+				x => x.MinStockQuantity,
+				x => x.Published,
+				x => x.SubjectToAcl,
+				x => x.VisibleIndividually);
+		}
+
+		static void AddPropsToSet(HashSet<string> props, params Expression<Func<Product, object>>[] lambdas)
+		{
+			foreach (var lambda in lambdas)
+			{
+				props.Add(lambda.ExtractPropertyInfo().Name);
+			}
+		}
+
+		public static HashSet<string> GetVisibilityAffectingPropertyNames()
+		{
+			return _visibilityAffectingProductProps;
+		}
+
+		#endregion
+
+		private ICollection<ProductCategory> _productCategories;
         private ICollection<ProductManufacturer> _productManufacturers;
         private ICollection<ProductPicture> _productPictures;
         private ICollection<ProductReview> _productReviews;
@@ -179,7 +214,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<string>("Sku", _sku);
+				return this.GetMergedDataValue<string>(nameof(Sku), _sku);
 			}
 			set
 			{
@@ -197,7 +232,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<string>("ManufacturerPartNumber", _manufacturerPartNumber);
+				return this.GetMergedDataValue<string>(nameof(ManufacturerPartNumber), _manufacturerPartNumber);
 			}
 			set
 			{
@@ -215,7 +250,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<string>("Gtin", _gtin);
+				return this.GetMergedDataValue<string>(nameof(Gtin), _gtin);
 			}
 			set
 			{
@@ -395,7 +430,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue("StockQuantity", _stockQuantity);
+				return this.GetMergedDataValue(nameof(StockQuantity), _stockQuantity);
 			}
 			set
 			{
@@ -442,7 +477,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
             {
-                return this.GetMergedDataValue<int>("BackorderModeId", _backorderModeId);
+                return this.GetMergedDataValue<int>(nameof(BackorderModeId), _backorderModeId);
             }
             set
             {
@@ -468,10 +503,28 @@ namespace SmartStore.Core.Domain.Catalog
 		[DataMember]
 		public int OrderMaximumQuantity { get; set; }
 
-		/// <summary>
-		/// Gets or sets the comma seperated list of allowed quantities. null or empty if any quantity is allowed
-		/// </summary>
-		[DataMember]
+        /// <summary>
+        /// Gets or sets the quantity step
+        /// </summary>
+        [DataMember]
+        public int QuantityStep { get; set; }
+
+        /// <summary>
+        /// Gets or sets the quantity control type
+        /// </summary>
+        [DataMember]
+        public QuantityControlType QuantiyControlType { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value to specify whether or not to hide the quantity input control
+        /// </summary>
+        [DataMember]
+        public bool HideQuantityControl { get; set; }
+
+        /// <summary>
+        /// Gets or sets the comma seperated list of allowed quantities. null or empty if any quantity is allowed
+        /// </summary>
+        [DataMember]
 		public string AllowedQuantities { get; set; }
 
 		/// <summary>
@@ -507,7 +560,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<decimal>("Price", _price);
+				return this.GetMergedDataValue<decimal>(nameof(Price), _price);
 			}
 			set
 			{
@@ -604,7 +657,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<decimal>("Length", _length);
+				return this.GetMergedDataValue<decimal>(nameof(Length), _length);
 			}
 			set
 			{
@@ -621,7 +674,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<decimal>("Width", _width);
+				return this.GetMergedDataValue<decimal>(nameof(Width), _width);
 			}
 			set
 			{
@@ -638,7 +691,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<decimal>("Height", _height);
+				return this.GetMergedDataValue<decimal>(nameof(Height), _height);
 			}
 			set
 			{
@@ -676,9 +729,23 @@ namespace SmartStore.Core.Domain.Catalog
 		[Index]
         public bool Deleted { get; set; }
 
-        /// <summary>
-        /// Gets or sets the date and time of product creation
-        /// </summary>
+		/// <summary>
+		/// Gets or sets a value indicating whether the entity is a system product.
+		/// </summary>
+		[DataMember]
+		[Index("Product_SystemName_IsSystemProduct", 2)]
+		public bool IsSystemProduct { get; set; }
+
+		/// <summary>
+		/// Gets or sets the product system name.
+		/// </summary>
+		[DataMember]
+		[Index("Product_SystemName_IsSystemProduct", 1)]
+		public string SystemName { get; set; }
+
+		/// <summary>
+		/// Gets or sets the date and time of product creation
+		/// </summary>
 		[DataMember]
 		public DateTime CreatedOnUtc { get; set; }
 
@@ -697,7 +764,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<int?>("DeliveryTimeId", _deliveryTimeId);
+				return this.GetMergedDataValue<int?>(nameof(DeliveryTimeId), _deliveryTimeId);
 			}
 			set
 			{
@@ -717,7 +784,7 @@ namespace SmartStore.Core.Domain.Catalog
             [DebuggerStepThrough]
             get
             {
-                return this.GetMergedDataValue<int?>("QuantityUnitId", _quantityUnitId);
+                return this.GetMergedDataValue<int?>(nameof(QuantityUnitId), _quantityUnitId);
             }
             set
             {
@@ -728,6 +795,23 @@ namespace SmartStore.Core.Domain.Catalog
         [DataMember]
         public virtual QuantityUnit QuantityUnit { get; set; }
 
+		/// <summary>
+		/// Gets or sets the customs tariff number
+		/// </summary>
+		[DataMember]
+		public string CustomsTariffNumber { get; set; }
+
+		/// <summary>
+		/// Gets or sets the country of origin identifier
+		/// </summary>
+		[DataMember]
+		public int? CountryOfOriginId { get; set; }
+
+		/// <summary>
+		/// Gets or sets the country of origin
+		/// </summary>
+		[DataMember]
+		public virtual Country CountryOfOrigin { get; set; }
 
 		/// <summary>
 		/// Gets or sets if base price quotation (PAnGV) is enabled
@@ -751,7 +835,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<decimal?>("BasePriceAmount", _basePriceAmount);
+				return this.GetMergedDataValue<decimal?>(nameof(BasePriceAmount), _basePriceAmount);
 			}
 			set
 			{
@@ -769,7 +853,7 @@ namespace SmartStore.Core.Domain.Catalog
 			[DebuggerStepThrough]
 			get
 			{
-				return this.GetMergedDataValue<int?>("BasePriceBaseAmount", _basePriceBaseAmount);
+				return this.GetMergedDataValue<int?>(nameof(BasePriceBaseAmount), _basePriceBaseAmount);
 			}
 			set
 			{
@@ -811,6 +895,12 @@ namespace SmartStore.Core.Domain.Catalog
 		public bool BundlePerItemShoppingCart { get; set; }
 
 		/// <summary>
+		/// Gets or sets the main picture id
+		/// </summary>
+		[DataMember]
+		public int? MainPictureId { get; set; }
+
+		/// <summary>
 		/// Gets or sets the product type
 		/// </summary>
 		[DataMember]
@@ -833,7 +923,7 @@ namespace SmartStore.Core.Domain.Catalog
 				switch (ProductType)
 				{
 					case ProductType.SimpleProduct:
-						return "smnet-hide";
+						return "secondary d-none";
 					case ProductType.GroupedProduct:
 						return "success";
 					case ProductType.BundledProduct:

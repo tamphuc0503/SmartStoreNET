@@ -9,12 +9,14 @@ using System.IO;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using AngleSharp.Dom;
+using AngleSharp.Parser.Html;
 
 namespace SmartStore
 {
     public static class StringExtensions
     {
-        public const string CarriageReturnLineFeed = "\r\n";
+		public const string CarriageReturnLineFeed = "\r\n";
         public const string Empty = "";
         public const char CarriageReturn = '\r';
         public const char LineFeed = '\n';
@@ -374,6 +376,190 @@ namespace SmartStore
         }
 
 		/// <summary>
+		/// Removes all redundant whitespace (empty lines, double space etc.).
+		/// Use ~! literal to keep whitespace wherever necessary.
+		/// </summary>
+		/// <param name="input">Input</param>
+		/// <returns>The compacted string</returns>
+		public static string Compact(this string input, bool removeEmptyLines = false)
+		{
+			Guard.NotNull(input, nameof(input));
+
+			var sb = new StringBuilder();
+			var lines = GetLines(input.Trim(), true, removeEmptyLines).ToArray();
+
+			foreach (var line in lines)
+			{
+				var len = line.Length;
+				var sbLine = new StringBuilder(len);
+				var isChar = false;
+				var isLiteral = false; // When we detect the ~! literal
+				int i = 0;
+				var eof = false;
+				
+				for (i = 0; i < len; i++)
+				{
+					var c = line[i];
+
+					eof = i == len - 1;
+
+					if (Char.IsWhiteSpace(c))
+					{
+						// Space, Tab etc.
+						if (isChar)
+						{
+							// If last char not empty, append the space.
+							sbLine.Append(' ');
+						}
+
+						isLiteral = false;
+						isChar = false;
+					}
+					else
+					{
+						// Char or Literal (~!)
+
+						isLiteral = c == '~' && !eof && line[i + 1] == '!';
+						isChar = true;
+
+						if (isLiteral)
+						{
+							sbLine.Append(' ');
+							i++; // skip next "!" char
+						}
+						else
+						{
+							sbLine.Append(c);
+						}
+					}
+				}
+
+				// Append the compacted and trimmed line
+				sb.AppendLine(sbLine.ToString().Trim().Trim(','));	
+			}
+
+			return sb.ToString().Trim();
+		}
+
+		/// <summary>
+		/// Splits the input string by carriage return.
+		/// </summary>
+		/// <param name="input">The string to split</param>
+		/// <returns>A sequence with string items per line</returns>
+		public static IEnumerable<string> GetLines(this string input, bool trimLines = false, bool removeEmptyLines = false)
+		{
+			if (input.IsEmpty())
+			{
+				yield break;
+			}
+			
+			using (var sr = new StringReader(input))
+			{
+				string line;
+				while ((line = sr.ReadLine()) != null)
+				{
+					if (trimLines)
+					{
+						line = line.Trim();
+					}
+
+					if (removeEmptyLines && IsEmpty(line))
+					{
+						continue;
+					}
+
+					yield return line;
+				}
+			}
+		}
+
+		///// <summary>
+		///// Removes all redundant whitespace (empty lines, double space etc.).
+		///// Use ~! literal to keep whitespace wherever necessary.
+		///// </summary>
+		///// <param name="input">Input</param>
+		///// <returns>The compacted string</returns>
+		//public static string Compact(this string input)
+		//{
+		//	Guard.NotNull(input, nameof(input));
+
+		//	var isNewLine = false;
+		//	var isBlank = false;
+		//	var isChar = false;
+		//	var isLiteral = false; // When we detect the ~! literal
+		//	var len = input.Length;
+		//	int i = 0;
+		//	var eof = false;
+
+		//	var sb = new StringBuilder();
+
+		//	for (i = 0; i < len; i++)
+		//	{
+		//		var c = input[i];
+
+		//		eof = i == len - 1;
+
+		//		if (Char.IsWhiteSpace(c))
+		//		{
+		//			if (c == '\r' && !eof && input[i + 1] == '\n')
+		//			{
+		//				// \r\n detected, don't double-check
+		//				continue;
+		//			}
+
+		//			if (c == '\r' || c == '\n')
+		//			{
+		//				// New line
+		//				if (i > 0 && sb[sb.Length - 1] == ' ')
+		//				{
+		//					// If NewLine is detected, trim end (all trailing whitespace)
+		//					sb.Remove(sb.Length - 1, 1);
+		//				}
+		//			}
+		//			else
+		//			{
+		//				// Space, tab etc.	
+		//				if (isChar)
+		//				{
+		//					// If last char not empty, append the space...
+		//					sb.Append(' ');
+		//				}
+		//			}
+
+		//			isLiteral = false;
+		//			isChar = false;
+		//			isBlank = true;
+		//			isNewLine = c == '\r' || c == '\n';
+		//		}
+		//		else // No WhiteSpace
+		//		{
+		//			if (isNewLine)
+		//			{
+		//				// First non-blank char in current line: write NewLine first.
+		//				sb.AppendLine();
+		//			}
+
+		//			isLiteral = c == '~' && !eof && input[i + 1] == '!';
+		//			isChar = true;
+		//			isNewLine = false;
+		//			isBlank = false;
+
+		//			if (isLiteral)
+		//			{
+		//				sb.Append(' ');
+		//				i++; // skip next "!" char
+		//			}
+		//			else
+		//			{
+		//				sb.Append(c);
+		//			}
+		//		}
+		//	}
+
+		//	return sb.ToString();
+		//}
+
+		/// <summary>
 		/// Ensure that a string starts with a string.
 		/// </summary>
 		/// <param name="value">The target string</param>
@@ -444,42 +630,43 @@ namespace SmartStore
             return HttpUtility.HtmlDecode(value);
         }
 
-        [DebuggerStepThrough]
-        public static string RemoveHtml(this string value)
-        {
-            return RemoveHtmlInternal(value, null);
-        }
+		[Obsolete("The 'removeTags' parameter is not supported anymore. Use the parameterless method instead.")]
+		public static string RemoveHtml(this string source, ICollection<string> removeTags)
+		{
+			return RemoveHtml(source);
+		}
 
-        public static string RemoveHtml(this string value, ICollection<string> removeTags)
-        {
-            return RemoveHtmlInternal(value, removeTags);
-        }
+		public static string RemoveHtml(this string source)
+		{
+			if (source.IsEmpty())
+				return string.Empty;
 
-        private static string RemoveHtmlInternal(string s, ICollection<string> removeTags)
-        {
-            List<string> removeTagsUpper = null;
-            if (removeTags != null)
-            {
-                removeTagsUpper = new List<string>(removeTags.Count);
+			var ignoreTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "script", "style", "svg", "img" };
 
-                foreach (string tag in removeTags)
-                {
-                    removeTagsUpper.Add(tag.ToUpperInvariant());
-                }
-            }
+			var parser = new HtmlParser();
+			var doc = parser.Parse(source);
 
-            return RegularExpressions.RemoveHTML.Replace(s, delegate(Match match)
-            {
-                string tag = match.Groups["tag"].Value.ToUpperInvariant();
+			var treeWalker = doc.CreateTreeWalker(doc.Body, FilterSettings.Text);
 
-                if (removeTagsUpper == null)
-                    return string.Empty;
-                else if (removeTagsUpper.Contains(tag))
-                    return string.Empty;
-                else
-                    return match.Value;
-            });
-        }
+			var sb = new StringBuilder();
+
+			var node = treeWalker.ToNext();
+			while (node != null)
+			{
+				if (!ignoreTags.Contains(node.Parent.NodeName))
+				{
+					var text = node.TextContent;
+					if (text.HasValue())
+					{
+						sb.AppendLine(text);
+					}
+				}
+
+				node = treeWalker.ToNext();
+			}
+
+			return sb.ToString().HtmlDecode();
+		}
 
 		/// <summary>
 		/// Replaces pascal casing with spaces. For example "CustomerId" would become "Customer Id".
@@ -553,18 +740,27 @@ namespace SmartStore
 		/// <returns>true: success, false: failure</returns>
 		[DebuggerStepThrough]
         [SuppressMessage("ReSharper", "StringIndexOfIsCultureSpecific.1")]
-		public static bool SplitToPair(this string value, out string strLeft, out string strRight, string delimiter)
+		public static bool SplitToPair(this string value, out string leftPart, out string rightPart, string delimiter, bool splitAfterLast = false)
 		{
-			int idx = -1;
-			if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(delimiter) || (idx = value.IndexOf(delimiter)) == -1)
+			leftPart = value;
+			rightPart = "";
+
+			if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(delimiter))
 			{
-				strLeft = value;
-				strRight = "";
 				return false;
 			}
 
-			strLeft = value.Substring(0, idx);
-			strRight = value.Substring(idx + delimiter.Length);
+			var idx = splitAfterLast
+				? value.LastIndexOf(delimiter)
+				: value.IndexOf(delimiter);
+
+			if (idx == -1)
+			{
+				return false;
+			}
+
+			leftPart = value.Substring(0, idx);
+			rightPart = value.Substring(idx + delimiter.Length);
 
 			return true;
 		}
@@ -722,8 +918,9 @@ namespace SmartStore
         {
 			if (value.HasValue() && x1 > 0 && x2 > x1 && x2 < value.Length) 
             {
-				return value.Substring(0, x1) + (replaceBy == null ? "" : replaceBy) + value.Substring(x2 + 1);
+				return value.Substring(0, x1) + (replaceBy.EmptyNull()) + value.Substring(x2 + 1);
 			}
+
 			return value;
 		}
 
@@ -749,6 +946,29 @@ namespace SmartStore
 				exc.Dump();
 			}
 			return value;
+		}
+
+		/// <summary>
+		/// Replaces digits in a string with culture native digits (if digit substitution for culture is required)
+		/// </summary>
+		[DebuggerStepThrough]
+		public static string ReplaceNativeDigits(this string value, IFormatProvider provider = null)
+		{
+			Guard.NotNull(value, nameof(value));
+			
+			provider = provider ?? NumberFormatInfo.CurrentInfo;
+			var nfi = NumberFormatInfo.GetInstance(provider);
+
+			if (nfi.DigitSubstitution == DigitShapes.None)
+			{
+				return value;
+			}
+
+			var nativeDigits = nfi.NativeDigits;
+			var rg = new Regex(@"\d");
+
+			var result = rg.Replace(value, m => nativeDigits[m.Value.ToInt()]);
+			return result;
 		}
 
 		[DebuggerStepThrough]
@@ -897,14 +1117,23 @@ namespace SmartStore
         {
             var result = input.ToSafe();
 
-            char[] invalidChars = isPath ? Path.GetInvalidPathChars() : Path.GetInvalidFileNameChars();
+            var invalidChars = new HashSet<char>(isPath ? Path.GetInvalidPathChars() : Path.GetInvalidFileNameChars());
 
-            foreach (var c in invalidChars)
-            {
-                result = result.Replace(c.ToString(), replacement ?? "-");
-            }
+			var sb = new StringBuilder();
+			foreach (var c in input)
+			{
+				if (invalidChars.Contains(c))
+				{
+					sb.Append(replacement ?? "-");
+				}
+				else
+				{
+					sb.Append(c);
+				}
+				result = result.Replace(c.ToString(), replacement ?? "-");
+			}
 
-            return result;
+			return sb.ToString();
         }
 
 		[DebuggerStepThrough]
@@ -947,11 +1176,37 @@ namespace SmartStore
 			return s.Replace("'", "");
 		}
 
+		[DebuggerStepThrough]
+		public static string HighlightKeywords(this string input, string keywords, string preMatch = "<strong>", string postMatch = "</strong>")
+		{
+			Guard.NotNull(preMatch, nameof(preMatch));
+			Guard.NotNull(postMatch, nameof(postMatch));
+
+			if (input.IsEmpty() || keywords.IsEmpty())
+			{
+				return input;
+			}
+
+			var pattern = String.Join("|", keywords.Trim().Split(' ', '-')
+				.Select(x => x.Trim())
+				.Where(x => x.HasValue())
+				.Select(x => Regex.Escape(x))
+				.Distinct());
+
+			if (pattern.HasValue())
+			{
+				var rg = new Regex(pattern, RegexOptions.IgnoreCase);
+				input = rg.Replace(input, m => preMatch + m.Value + postMatch);
+			}
+
+			return input;
+		}
+
 		#endregion
 
-        #region Helper
+		#region Helper
 
-        private static void EncodeJsChar(TextWriter writer, char c, char delimiter)
+		private static void EncodeJsChar(TextWriter writer, char c, char delimiter)
         {
             switch (c)
             {

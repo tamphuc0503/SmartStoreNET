@@ -1,18 +1,13 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Web.Mvc;
 using System.Web;
 using System.Web.UI;
 using System.IO;
 
 namespace SmartStore.Web.Framework.UI
-{
-    
+{ 
     public abstract class ComponentRenderer<TComponent> : IHtmlString where TComponent : Component
     {
-
         protected ComponentRenderer()
         {
         }
@@ -69,26 +64,24 @@ namespace SmartStore.Web.Framework.UI
             throw new NotImplementedException();
         }
 
-        public void Render()
+        public virtual void Render()
         {
-            using (HtmlTextWriter htmlTextWriter = new HtmlTextWriter(this.ViewContext.Writer))
-            {
-                this.WriteHtml(htmlTextWriter);
-            }
-        }
+			var output = ((System.Web.Mvc.WebViewPage)this.HtmlHelper.ViewDataContainer).Output;
+			var str = ToHtmlString();
+			output.Write(str);
+		}
 
-        public string ToHtmlString()
+        public virtual string ToHtmlString()
         {
-            string str;
             using (var stringWriter = new StringWriter())
             {
 				using (var htmlWriter = new HtmlTextWriter(stringWriter))
 				{
 					this.WriteHtml(htmlWriter);
-					str = stringWriter.ToString();
+					var str = stringWriter.ToString();
+					return str;
 				}
             }
-            return str;
         }
 
 
@@ -96,7 +89,5 @@ namespace SmartStore.Web.Framework.UI
         {
             return id.SanitizeHtmlId();
         }
-
     }
-
 }
